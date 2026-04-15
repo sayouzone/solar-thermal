@@ -3,6 +3,12 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# 생성된 샘플 출력은 추적하지 않음 (generate_sample_data.py 가 재생성)
+samples/*.jpg
+samples/*.tiff
+samples/*.json
+!samples/.gitkeep
+
 # Yolo models
 models/
 data/
