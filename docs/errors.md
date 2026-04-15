@@ -57,3 +57,16 @@ Traceback (most recent call last):
     raise RuntimeError(emojis(f"Dataset '{clean_url(self.args.data)}' error ❌ {e}")) from e
 RuntimeError: Dataset '/data/solar/data.yaml' error ❌ '/data/solar/data.yaml' does not exist
 ````
+
+#### 
+
+```bash
+python scripts/train_yolo.py --data configs/dataset.yaml --base yolov8m.pt --device cpu
+```
+
+dataset.yaml에서 "path: /data/solar" 에 이미지 파일 경로 변경 필요
+
+```bash
+[error] dataset root does not exist: /data/solar
+        Fix the `path:` value in configs/dataset.yaml or mount/download the dataset.
+```

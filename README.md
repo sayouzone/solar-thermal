@@ -115,8 +115,13 @@ cp configs/dataset.example.yaml configs/dataset.yaml
 **(c) 학습 실행**
 
 ```bash
-python scripts/train_yolo.py --data configs/dataset.yaml --base yolov8m.pt
+python scripts/train_yolo.py --data configs/dataset.yaml --base models/yolov8m.pt
 ```
+
+```bash
+python scripts/train_yolo.py --data configs/dataset.yaml --base models/yolov8m.pt --device cpu
+```
+
 
 학습 전 `data.yaml`, 루트 디렉터리, `images/{train,val}` 존재 여부를 자동 검증하여
 `Dataset '...' error ❌ ... does not exist` 같은 Ultralytics 내부 오류 대신 명확한
