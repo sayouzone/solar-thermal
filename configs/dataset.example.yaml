@@ -1,0 +1,39 @@
+# ============================================================================
+# YOLO 학습용 dataset 설정 템플릿
+#
+# 이 파일은 예시이며, 실제 데이터 경로로 수정한 뒤 train_yolo.py 에
+#   --data configs/dataset.example.yaml
+# 로 전달하세요. 또는 이 파일을 복사해 configs/dataset.yaml 로 저장하고
+# 필요에 맞게 편집하세요.
+#
+# 디렉터리 구조 예:
+#   /data/solar/
+#     images/
+#       train/*.jpg
+#       val/*.jpg
+#     labels/
+#       train/*.txt          # YOLO txt 포맷 (class cx cy w h, 0..1 정규화)
+#       val/*.txt
+#
+# 공개 데이터셋 준비 힌트:
+#   - InfraredSolarModules (RaptorMaps)      -> IR 단독, 12 classes
+#   - PVEL-AD                                -> EL 이미지 (YOLO 용 변환 필요)
+#   - Mendeley Photovoltaic Thermal Images   -> IR 단독
+#   - Roboflow Universe "solar panel" 검색   -> 미리 YOLO 포맷으로 제공
+# ============================================================================
+
+# 데이터셋 루트 (절대경로 권장)
+path: /data/solar
+
+# path 기준 상대경로
+train: images/train
+val: images/val
+# test 가 있으면 주석 해제
+# test: images/test
+
+# 클래스 이름 (YOLODetector 와 동일해야 함)
+names:
+  0: panel
+  1: cell
+  2: candidate_hotspot
+  3: bypass_diode

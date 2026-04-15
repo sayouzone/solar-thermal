@@ -88,9 +88,39 @@ export ANTHROPIC_API_KEY=sk-ant-...
 URI 를 설정합니다. 초기 개발 단계에서는 Ultralytics pre-trained 모델(`yolov8m.pt`)을
 fine-tune 한 체크포인트를 사용하세요.
 
-```bash
-python scripts/train_yolo.py --data /data/solar/data.yaml --base yolov8m.pt
+**(a) 데이터셋 준비**
+
+YOLO 포맷 (이미지 + YOLO txt 라벨) 으로 아래처럼 배치합니다:
+
 ```
+/data/solar/
+  images/{train,val}/*.jpg
+  labels/{train,val}/*.txt   # 각 줄: <class> <cx> <cy> <w> <h>  (0..1 정규화)
+```
+
+공개 데이터셋으로 시작하려면:
+- [InfraredSolarModules](https://github.com/RaptorMaps/InfraredSolarModules) (RaptorMaps, IR 단독)
+- [PVEL-AD](https://github.com/binyisu/PVEL-AD) (EL 결함)
+- Roboflow Universe — "solar panel" / "photovoltaic defect"
+
+**(b) `data.yaml` 작성**
+
+템플릿을 복사해서 실제 경로로 편집:
+
+```bash
+cp configs/dataset.example.yaml configs/dataset.yaml
+# path, train, val, names 수정
+```
+
+**(c) 학습 실행**
+
+```bash
+python scripts/train_yolo.py --data configs/dataset.yaml --base yolov8m.pt
+```
+
+학습 전 `data.yaml`, 루트 디렉터리, `images/{train,val}` 존재 여부를 자동 검증하여
+`Dataset '...' error ❌ ... does not exist` 같은 Ultralytics 내부 오류 대신 명확한
+안내를 출력합니다.
 
 ### 3. CLI 추론
 
