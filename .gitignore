@@ -12,7 +12,8 @@ samples/*.json
 # Yolo models
 models/
 data/
-samples/
+
+.DS_Store
 
 # C extensions
 *.so
