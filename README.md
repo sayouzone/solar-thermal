@@ -124,12 +124,29 @@ python scripts/train_yolo.py --data configs/dataset.yaml --base yolov8m.pt
 
 ### 3. CLI 추론
 
+**(선택) 합성 샘플 데이터 생성** — 실제 드론 데이터가 없어도 파이프라인을 end-to-end 로
+테스트할 수 있도록 RGB JPG + radiometric TIFF (uint16 centi-Kelvin, FLIR 컨벤션) 쌍을
+생성하는 스크립트가 포함되어 있습니다.
+
+```bash
+python scripts/generate_sample_data.py --out samples --preview
+# -> samples/sample_rgb.jpg          (3x4 패널 array)
+# -> samples/sample_ir.tiff          (radiometric, 25~65°C, 5개 결함 + 그림자)
+# -> samples/sample_ir_preview.jpg   (INFERNO 히트맵 시각화)
+# -> samples/sample_meta.json        (ground-truth 라벨)
+```
+
+생성된 TIFF 의 각 픽셀은 `value / 100 - 273.15 = °C` 로 역변환됩니다
+(`src/solar_thermal/preprocessing/loader.py` 의 heuristic 이 자동 수행).
+
+**추론 실행**
+
 ```bash
 python scripts/run_inference.py \
-    --rgb samples/rgb.jpg \
-    --ir samples/ir_radiometric.tiff \
+    --rgb samples/sample_rgb.jpg \
+    --ir  samples/sample_ir.tiff \
     --ir-format radiometric_tiff \
-    --out report.json
+    --out samples/report.json
 ```
 
 ### 4. API 서버
