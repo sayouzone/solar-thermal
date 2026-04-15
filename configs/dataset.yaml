@@ -7,7 +7,7 @@
 # 필요에 맞게 편집하세요.
 #
 # 디렉터리 구조 예:
-#   /data/solar/
+#   ./data/solar/
 #     images/
 #       train/*.jpg
 #       val/*.jpg
@@ -23,7 +23,8 @@
 # ============================================================================
 
 # 데이터셋 루트 (절대경로 권장)
-path: /data/solar
+#path: /data/solar
+path: ./data/solar
 
 # path 기준 상대경로
 train: images/train
