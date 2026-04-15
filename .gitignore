@@ -9,6 +9,9 @@ samples/*.tiff
 samples/*.json
 !samples/.gitkeep
 
+# Yolo models
+yolo*.pt
+
 # C extensions
 *.so
 
