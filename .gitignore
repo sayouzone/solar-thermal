@@ -10,7 +10,10 @@ samples/*.json
 !samples/.gitkeep
 
 # Yolo models
-yolo*.pt
+models/
+data/
+
+.DS_Store
 
 # C extensions
 *.so

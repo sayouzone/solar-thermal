@@ -57,3 +57,59 @@ Traceback (most recent call last):
     raise RuntimeError(emojis(f"Dataset '{clean_url(self.args.data)}' error ❌ {e}")) from e
 RuntimeError: Dataset '/data/solar/data.yaml' error ❌ '/data/solar/data.yaml' does not exist
 ````
+
+#### Solar Data
+
+```bash
+python scripts/train_yolo.py --data configs/dataset.yaml --base yolov8m.pt --device cpu
+```
+
+dataset.yaml에서 "path: /data/solar" 에 이미지 파일 경로 변경 필요
+
+```bash
+[error] dataset root does not exist: /data/solar
+        Fix the `path:` value in configs/dataset.yaml or mount/download the dataset.
+```
+
+->
+
+dataset.yaml에서 "path: ./data/solar"으로 변경
+
+#### Training / Eval Data
+
+```bash
+Traceback (most recent call last):
+  File "/Users/seongjungkim/Development/sayouzone/solar-thermal/scripts/train_yolo.py", line 117, in <module>
+    main()
+  File "/Users/seongjungkim/Development/sayouzone/solar-thermal/scripts/train_yolo.py", line 95, in main
+    model.train(
+  File "/Users/seongjungkim/Development/sayouzone/.venv/lib/python3.11/site-packages/ultralytics/engine/model.py", line 787, in train
+    self.trainer.train()
+  File "/Users/seongjungkim/Development/sayouzone/.venv/lib/python3.11/site-packages/ultralytics/engine/trainer.py", line 246, in train
+    self._do_train()
+  File "/Users/seongjungkim/Development/sayouzone/.venv/lib/python3.11/site-packages/ultralytics/engine/trainer.py", line 369, in _do_train
+    self._setup_train()
+  File "/Users/seongjungkim/Development/sayouzone/.venv/lib/python3.11/site-packages/ultralytics/engine/trainer.py", line 350, in _setup_train
+    self._build_train_pipeline()
+  File "/Users/seongjungkim/Development/sayouzone/.venv/lib/python3.11/site-packages/ultralytics/engine/trainer.py", line 271, in _build_train_pipeline
+    self.train_loader = self.get_dataloader(
+                        ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/seongjungkim/Development/sayouzone/.venv/lib/python3.11/site-packages/ultralytics/models/yolo/detect/train.py", line 93, in get_dataloader
+    dataset = self.build_dataset(dataset_path, mode, batch_size)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/seongjungkim/Development/sayouzone/.venv/lib/python3.11/site-packages/ultralytics/models/yolo/detect/train.py", line 77, in build_dataset
+    return build_yolo_dataset(self.args, img_path, batch, self.data, mode=mode, rect=mode == "val", stride=gs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/seongjungkim/Development/sayouzone/.venv/lib/python3.11/site-packages/ultralytics/data/build.py", line 236, in build_yolo_dataset
+    return dataset(
+           ^^^^^^^^
+  File "/Users/seongjungkim/Development/sayouzone/.venv/lib/python3.11/site-packages/ultralytics/data/dataset.py", line 88, in __init__
+    super().__init__(*args, channels=self.data.get("channels", 3), **kwargs)
+  File "/Users/seongjungkim/Development/sayouzone/.venv/lib/python3.11/site-packages/ultralytics/data/base.py", line 117, in __init__
+    self.im_files = self.get_img_files(self.img_path)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/seongjungkim/Development/sayouzone/.venv/lib/python3.11/site-packages/ultralytics/data/base.py", line 181, in get_img_files
+    raise FileNotFoundError(f"{self.prefix}Error loading data from {img_path}\n{HELP_URL}") from e
+FileNotFoundError: train: Error loading data from /Users/seongjungkim/Development/sayouzone/solar-thermal/data/solar/images/train
+See https://docs.ultralytics.com/datasets for dataset formatting guidance.
+```

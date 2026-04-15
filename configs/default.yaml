@@ -6,7 +6,8 @@ detector:
   # YOLO 모델 가중치 경로 (cloud storage URI or local path)
   # 학습된 모델은 [panel, cell, candidate_hotspot, bypass_diode] 클래스를 가정
   weights: "models/yolo_solar_v1.pt"
-  device: "cuda:0"            # "cpu" | "cuda:0" | "mps"
+  #device: "cuda:0"            # "cpu" | "cuda:0" | "mps"
+  device: "cpu"
   imgsz: 1280
   conf_threshold: 0.25
   iou_threshold: 0.45
