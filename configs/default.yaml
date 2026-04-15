@@ -1,0 +1,80 @@
+# ==============================================================================
+# 태양광 패널 결함 탐지 파이프라인 기본 설정
+# ==============================================================================
+
+detector:
+  # YOLO 모델 가중치 경로 (cloud storage URI or local path)
+  # 학습된 모델은 [panel, cell, candidate_hotspot, bypass_diode] 클래스를 가정
+  weights: "models/yolo_solar_v1.pt"
+  device: "cuda:0"            # "cpu" | "cuda:0" | "mps"
+  imgsz: 1280
+  conf_threshold: 0.25
+  iou_threshold: 0.45
+  max_det: 300
+
+thermal:
+  # 열화상 raw 파일이 radiometric TIFF 일 때만 사용
+  # 단위: °C. pseudo-color JPEG 인 경우 계측기 camera range 를 이용해 역변환
+  min_temp_c: -20.0
+  max_temp_c: 120.0
+  # 핫스팟 판정 기준
+  hotspot:
+    # 1) 패널 내부 평균 대비 ΔT (K) 이상이면 후보
+    delta_t_threshold: 5.0
+    # 2) 절대 온도가 이 값을 초과해도 후보
+    abs_temp_threshold: 65.0
+    # 3) 핫스팟 최소 면적 (px)
+    min_area_px: 25
+    # 4) 모폴로지 연산 커널
+    morph_kernel: 3
+
+registration:
+  # RGB-IR 정합 방식: "homography" | "affine" | "identity"
+  method: "homography"
+  # ORB feature 최대 개수 (homography 시)
+  orb_features: 2000
+  # RANSAC reprojection threshold
+  ransac_reproj_threshold: 5.0
+
+vlm:
+  provider: "anthropic"
+  model: "claude-opus-4-6"
+  max_tokens: 1024
+  temperature: 0.0
+  # API 키는 환경변수 ANTHROPIC_API_KEY 로 주입
+  # prompt caching 을 사용하여 system prompt 캐시
+  enable_prompt_caching: true
+  # VLM 호출을 핫스팟이 존재할 때만 수행 (비용 절감)
+  trigger_only_on_hotspot: true
+  # 한 번에 VLM 으로 보내는 최대 크롭 수
+  max_crops_per_request: 4
+
+fusion:
+  # 결함 심각도 가중치 (panel level)
+  severity_weights:
+    delta_t: 0.4
+    abs_temp: 0.3
+    vlm_confidence: 0.3
+  # 최종 결함 라벨 결정 방식
+  # "vlm_priority": VLM 판정을 우선
+  # "rule_priority": 룰 기반 판정 우선
+  # "ensemble": 가중 앙상블
+  strategy: "ensemble"
+
+storage:
+  # 입력/출력 저장소 타입: "local" | "gcs" | "s3"
+  backend: "local"
+  # backend=gcs 의 경우 bucket 이름
+  gcs_bucket: ""
+  # backend=s3 의 경우 bucket 이름 및 region
+  s3_bucket: ""
+  s3_region: "ap-northeast-2"
+  output_prefix: "solar-thermal/reports"
+
+api:
+  host: "0.0.0.0"
+  port: 8080
+  # 업로드 최대 파일 크기 (MB)
+  max_upload_mb: 50
+  # 동시에 처리할 최대 job 수
+  max_concurrent_jobs: 4

@@ -1,0 +1,33 @@
+# Core ML / CV
+ultralytics>=8.3.0          # YOLOv8/YOLOv11
+torch>=2.1.0
+torchvision>=0.16.0
+opencv-python-headless>=4.9.0
+numpy>=1.24.0
+Pillow>=10.0.0
+scikit-image>=0.22.0
+scipy>=1.11.0
+
+# Thermal image IO
+tifffile>=2024.1.30         # radiometric TIFF
+flirpy>=0.4.0               # FLIR IR parsing (optional)
+
+# VLM (Claude)
+anthropic>=0.39.0
+
+# API / Cloud
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.0
+pydantic-settings>=2.2.0
+python-multipart>=0.0.9
+httpx>=0.27.0
+
+# Cloud storage adapters
+google-cloud-storage>=2.14.0
+boto3>=1.34.0
+
+# Config / utilities
+PyYAML>=6.0
+loguru>=0.7.2
+tenacity>=8.2.3
