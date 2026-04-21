@@ -1,0 +1,134 @@
+"""
+End-to-End 파이프라인 실행
+===========================
+
+전체 흐름:
+    1. 자동 라벨링 (heuristic/sam2/yolo_world)
+    2. 시각화 → 수동 검수
+    3. (Label Studio로 수정 후 re-export)
+    4. 데이터셋 분할 & data.yaml 생성
+    5. YOLO11n 학습 시작
+
+사용:
+    python run_pipeline.py \\
+        --images /mnt/user-data/uploads \\
+        --work-dir ./workspace \\
+        --strategy heuristic \\
+        --classes solar_panel \\
+        --train-epochs 100
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+from pathlib import Path
+
+from auto_label import run as run_auto_label
+from split_dataset import split_dataset, SplitConfig
+from visualize_labels import visualize
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+log = logging.getLogger(__name__)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--images",   type=Path, required=True)
+    ap.add_argument("--work-dir", type=Path, default=Path("workspace"))
+    ap.add_argument("--strategy", default="heuristic",
+                    choices=["heuristic", "sam2", "yolo_world"])
+    ap.add_argument("--classes",  nargs="+", default=["solar_panel"])
+    ap.add_argument("--split",    type=float, nargs=3,
+                    default=[0.7, 0.2, 0.1])
+    ap.add_argument("--skip-train", action="store_true",
+                    help="YOLO 학습은 스킵하고 데이터셋까지만 준비")
+    ap.add_argument("--train-epochs", type=int, default=100)
+    ap.add_argument("--train-imgsz",  type=int, default=1280,
+                    help="드론 nadir view는 고해상도가 유리 (기본 640 → 1280)")
+    ap.add_argument("--train-batch",  type=int, default=8)
+    ap.add_argument("--model",        default="yolo11n.pt")
+    args = ap.parse_args()
+
+    work = args.work_dir
+    labels_dir    = work / "labels"
+    visual_dir    = work / "visualized"
+    dataset_dir   = work / "dataset"
+    debug_dir     = work / "debug"
+
+    # 1) Auto-label
+    log.info("=" * 60)
+    log.info("STEP 1: Auto-labeling (strategy=%s)", args.strategy)
+    log.info("=" * 60)
+    run_auto_label(
+        images_dir=args.images,
+        output_dir=labels_dir,
+        strategy=args.strategy,
+        class_id=0,
+        debug_dir=debug_dir if args.strategy == "heuristic" else None,
+    )
+
+    # 2) Visualize
+    log.info("=" * 60)
+    log.info("STEP 2: Visualizing labels for review")
+    log.info("=" * 60)
+    visualize(args.images, labels_dir, visual_dir, args.classes)
+    log.info("검수용 이미지: %s", visual_dir)
+    log.info("→ 잘못된 bbox는 Label Studio에서 수동 수정을 권장합니다.")
+
+    # 3) Split dataset
+    log.info("=" * 60)
+    log.info("STEP 3: Splitting dataset")
+    log.info("=" * 60)
+    yaml_path = split_dataset(
+        images_dir=args.images,
+        labels_dir=labels_dir,
+        output_dir=dataset_dir,
+        classes=args.classes,
+        split=SplitConfig(*args.split),
+    )
+
+    # 4) Train YOLO11n (optional)
+    if args.skip_train:
+        log.info("학습 스킵. 수동 학습 명령어:")
+        log.info(
+            "  yolo detect train data=%s model=%s epochs=%d imgsz=%d batch=%d",
+            yaml_path, args.model, args.train_epochs,
+            args.train_imgsz, args.train_batch,
+        )
+        return
+
+    log.info("=" * 60)
+    log.info("STEP 4: Training YOLO11n")
+    log.info("=" * 60)
+    try:
+        from ultralytics import YOLO
+    except ImportError:
+        log.error("ultralytics 미설치. `pip install ultralytics` 후 재실행.")
+        return
+
+    model = YOLO(args.model)
+    model.train(
+        data=str(yaml_path),
+        epochs=args.train_epochs,
+        imgsz=args.train_imgsz,
+        batch=args.train_batch,
+        project=str(work / "runs"),
+        name="solar_panel_yolo11n",
+        patience=20,
+        # 드론 이미지용 augmentation 튜닝
+        degrees=10.0,     # 회전 (항공 촬영 각도 변동)
+        translate=0.1,
+        scale=0.5,
+        fliplr=0.5,
+        flipud=0.5,       # nadir view는 수직 flip도 유효
+        mosaic=1.0,
+        mixup=0.1,
+    )
+
+
+if __name__ == "__main__":
+    main()

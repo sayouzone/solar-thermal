@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import cv2
 import json, dataclasses
+import logging
 import piexif
 import sys
 from fractions import Fraction
@@ -22,6 +23,12 @@ sys.path.insert(0, str(ROOT / "src"))
 from solar_thermal.detection.solar_panel_classical import ClassicalSolarPanelDetector
 from solar_thermal.detection.solar_panel_yolo import YoloSolarPanelDetector
 from solar_thermal.detection.solar_panel_sam_clip import SamClipSolarDetector
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+log = logging.getLogger(__name__)
 
 
 if __name__ == "__main__":
@@ -46,6 +53,10 @@ if __name__ == "__main__":
         "/Users/seongjungkim/Downloads/태양광 발전소/RGB/DJI_20251217130200_0001_Z.JPG",
     ]
 
+    log.info("=" * 60)
+    log.info("STEP 1: Auto-labeling OpenCV")
+    log.info("=" * 60)
+
     detector = ClassicalSolarPanelDetector()
     
     for image in images:
@@ -63,8 +74,13 @@ if __name__ == "__main__":
             print(f"  #{i}: bbox={d.bbox}, aspect={d.aspect_ratio:.2f}, "
                 f"rect={d.rectangularity:.2f}, score={d.score:.3f}")
     
+    log.info("=" * 60)
+    log.info("STEP 1: Auto-labeling YOLO11n Tuning")
+    log.info("=" * 60)
+
     # 2) 사전학습 COCO 가중치로 시작 (패널 클래스 없음 — 학습 필요)
-    detector = YoloSolarPanelDetector("models/yolo11n.pt", target_classes=None, device="cpu")
+    #detector = YoloSolarPanelDetector("models/yolo11n.pt", target_classes=None, device="cpu")
+    detector = YoloSolarPanelDetector("models/best.pt", target_classes=None, device="cpu")
 
     for image in images:
         results = detector.detect(image)

@@ -12,6 +12,7 @@ samples/*.json
 # Yolo models
 models/
 data/
+workspace/
 
 .DS_Store
 
