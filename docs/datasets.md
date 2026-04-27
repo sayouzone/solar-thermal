@@ -36,3 +36,9 @@ a machine learning dataset that contains real-world imagery of different anomali
 | Soiling        | 205    | Dirt, dust, or other debris on surface of module.                         |
 | Offline-Module | 828    | Entire module is heated.                                                  |
 | No-Anomaly     | 10,000 | Nominal solar module.                                                     |
+
+
+
+####
+
+https://drive.google.com/file/d/1EtteKnLhSFQ3XMCRXt5wKY-lDkIP7299/view?usp=drive_link
