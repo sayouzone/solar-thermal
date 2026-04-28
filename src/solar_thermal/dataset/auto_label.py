@@ -30,6 +30,8 @@ from typing import Sequence
 
 import cv2
 import numpy as np
+import time
+from datetime import timedelta
 
 logging.basicConfig(
     level=logging.INFO,
@@ -530,6 +532,9 @@ def run(
     class_id: int = 0,
     debug_dir: Path | None = None,
 ) -> None:
+    # 시작 시간
+    start = time.perf_counter()
+
     if strategy not in STRATEGIES:
         raise ValueError(f"지원하지 않는 strategy: {strategy}")
 
@@ -563,19 +568,30 @@ def run(
 
     total_boxes = 0
     for i, img_path in enumerate(image_paths, 1):
+        # 시작 시간
+        start_detect = time.perf_counter()
+
         result = detector.label(img_path)
-        print(result, type(result))
+        #print(result, type(result))
         result.save(output_dir)
         total_boxes += len(result.bboxes)
+
+        # 경과 시간
+        elapsed_detect = time.perf_counter() - start
+
         log.info(
-            "[%d/%d] %s → %d boxes",
-            i, len(image_paths), img_path.name, len(result.bboxes),
+            "[%d/%d] %s → %d boxes (%ds)",
+            i, len(image_paths), img_path.name, len(result.bboxes), timedelta(seconds=int(elapsed_detect)).total_seconds()
         )
 
     log.info(
         "완료. 총 %d개 bbox 생성, 평균 %.1f개/이미지",
         total_boxes, total_boxes / max(len(image_paths), 1),
     )
+
+    # 경과 시간
+    elapsed = time.perf_counter() - start
+    print(f"Elapsed: {timedelta(seconds=int(elapsed))}")
 
 
 def main() -> None:

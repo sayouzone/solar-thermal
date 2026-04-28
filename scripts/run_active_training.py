@@ -10,11 +10,24 @@ End-to-End 파이프라인 실행
     5. YOLO11n 학습 시작
 
 사용:
-    # Round 0: 5장 수동 라벨링 후 초기 학습
+    # Round 0: 50장 수동 라벨링 후 초기 학습
     python scripts/run_active_training.py seed \
         --images data/solar/images/RGB \
         --seed-labels ./workspace/labels_seed \
         --output ./workspace/round_0
+
+    python scripts/run_active_training.py seed \
+        --images data/solar/images/RGB \
+        --seed-labels ./workspace/labels_s10 \
+        --device mps \
+        --output ./workspace/round_s10
+
+    python scripts/run_active_training.py seed \
+        --images data/solar/images/RGB \
+        --seed-labels ./workspace/labels_s20 \
+        --model models/yolo11x.pt \
+        --device mps \
+        --output ./workspace/round_s20
 
     # Round 1+: 자동 라벨 → 샘플 선별
     python scripts/run_active_training.py iterate \
@@ -23,12 +36,31 @@ End-to-End 파이프라인 실행
         --output ./workspace/round_1 \
         --select-top 20
 
+    python scripts/run_active_training.py iterate \
+        --images data/solar/images/RGB \
+        --model ./runs/detect/workspace/round_s10/weights-2/weights/best.pt \
+        --device mps \
+        --output ./workspace/round_1_s10 \
+        --select-top 20
+
+    python scripts/run_active_training.py iterate \
+        --images data/solar/images/RGB \
+        --model ./runs/detect/workspace/round_s20/weights/weights/best.pt \
+        --device mps \
+        --output ./workspace/round_1_s20 \
+        --select-top 20
+
     # Round 2: 100장 라벨링 보정 후 학습
     python scripts/run_active_training.py seed \
         --images data/solar/images/RGB \
         --seed-labels ./workspace/labels_seed_r2 \
         --output ./workspace/round_2
 
+    python scripts/run_active_training.py seed \
+        --images data/solar/images/RGB \
+        --seed-labels ./workspace/labels_r2_50 \
+        --device mps \
+        --output ./workspace/round_2_50
 
     # Round 3+: 자동 라벨 → 샘플 선별
     python scripts/run_active_training.py iterate \
@@ -37,7 +69,6 @@ End-to-End 파이프라인 실행
         --output ./workspace/round_3 \
         --select-top 20
 
-
     # Round 2: 100장 라벨링 보정 후 학습
     python scripts/run_active_training.py seed \
         --images data/solar/images/RGB \
@@ -55,10 +86,86 @@ End-to-End 파이프라인 실행
     # Round 3+: 자동 라벨 → 샘플 선별
     python scripts/run_active_training.py iterate \
         --images data/solar/images/RGB \
-        --model ./runs/detect/workspace/round_2/weights5/weights/best.pt \
+        --model ./runs/detect/workspace/round_2/weights-5/weights/best.pt \
         --device mps \
         --output ./workspace/round_3 \
         --select-top 20
+
+    python scripts/run_active_training.py iterate \
+        --images data/solar/images/RGB \
+        --model ./runs/detect/workspace/round_2_50/weights/weights/best.pt \
+        --device mps \
+        --output ./workspace/round_3_50 \
+        --select-top 20
+
+    # Round 4: 100장 라벨링 보정 후 학습 (Round 0: Seed 20장, Round 2: 50장, Round 4: 100장)
+    # 100장으로 학습할 때 MPS에서 오류가 발생
+    python scripts/run_active_training.py seed \
+        --images data/solar/images/RGB \
+        --seed-labels ./workspace/labels_r4_100 \
+        --device cpu \
+        --output ./workspace/round_4_100
+
+    # Round 5+: 자동 라벨 → 샘플 선별
+    python scripts/run_active_training.py iterate \
+        --images data/solar/images/RGB \
+        --model ./runs/detect/workspace/round_4_100/weights-3/weights/best.pt \
+        --device mps \
+        --output ./workspace/round_5 \
+        --select-top 20
+
+
+
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s20 \
+    --model models/yolo11s.pt \
+    --device mps \
+    --output ./workspace/train_s20_s
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s20_s/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s20_s \
+    --select-top 20
+
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s50_s \
+    --model models/yolo11s.pt \
+    --device mps \
+    --output ./workspace/train_s50_s
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s50_s/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s50_s \
+    --select-top 20
+
+
+
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s20 \
+    --model models/yolo11m.pt \
+    --device mps \
+    --output ./workspace/train_s20_m
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s20_m/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s20_m \
+    --select-top 20
+
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s50_m \
+    --model models/yolo11m.pt \
+    --device mps \
+    --output ./workspace/train_s50_m
 """
 
 from __future__ import annotations
