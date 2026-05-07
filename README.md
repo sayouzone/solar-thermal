@@ -77,6 +77,11 @@ solar-thermal/
 ### 1. 로컬 설치
 
 ```bash
+source /Users/seongjungkim/Development/sayouzone/.venv/bin/activate
+source ~/Development/sayouzone/.venv/bin/activate
+```
+
+```bash
 pip install -r requirements.txt
 pip install -e .
 export ANTHROPIC_API_KEY=sk-ant-...

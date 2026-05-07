@@ -160,12 +160,173 @@ python scripts/run_active_training.py iterate \
     --output ./workspace/predict_s20_m \
     --select-top 20
 
+# 샘플 50개, pv string 및 pv panel 이외 지정, m 모델 사용
 python scripts/run_active_training.py seed \
     --images data/solar/images/RGB \
     --seed-labels ./workspace/labels_s50_m \
     --model models/yolo11m.pt \
     --device mps \
     --output ./workspace/train_s50_m
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s50_m/weights-2/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s50_m \
+    --select-top 20
+
+# 샘플 50개, pv string 및 pv panel만 지정, m 모델 사용
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s50_m_2 \
+    --model models/yolo11m.pt \
+    --device cuda \
+    --output ./workspace/train_s50_m_2
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s50_m_2/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s50_m_2 \
+    --select-top 20
+
+# 샘플 50개, pv string 및 pv panel, other 지정, m 모델 사용
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s50_m_3 \
+    --model models/yolo11m.pt \
+    --epochs 100 \
+    --device cuda \
+    --amp True \
+    --output ./workspace/train_s50_m_3
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s50_m_3/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s50_m_3 \
+    --select-top 20
+
+# 샘플 50개, pv string 및 pv panel, other 지정, nagative 추가, m 모델 사용
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s50_m_4 \
+    --model models/yolo11m.pt \
+    --epochs 100 \
+    --device cuda \
+    --amp True \
+    --output ./workspace/train_s50_m_4
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s50_m_4/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s50_m_4 \
+    --select-top 20
+
+# 샘플 100개, pv string 및 pv panel, other 지정, nagative 추가, m 모델 사용
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s100_m \
+    --model models/yolo11m.pt \
+    --epochs 100 \
+    --device cuda \
+    --amp True \
+    --output ./workspace/train_s100_m
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s100_m/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s100_m \
+    --select-top 20
+
+# 샘플 100개, pv string 및 pv panel, other 지정, nagative 추가, m 모델 사용
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s100_m \
+    --model models/yolo11m.pt \
+    --epochs 200 \
+    --device cuda \
+    --amp True \
+    --output ./workspace/train_s100_m_2
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s100_m_2/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s100_m_2 \
+    --select-top 20
+
+# 샘플 200개, pv string 및 pv panel, other 지정, nagative 추가, m 모델 사용 (스트링 조건을 혼용)
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s200_m \
+    --model models/yolo11m.pt \
+    --epochs 400 \
+    --device cuda \
+    --amp True \
+    --output ./workspace/train_s200_m
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s200_m/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s200_m \
+    --select-top 20
+
+# 샘플 200개, pv string 및 pv panel, other 지정, nagative 추가, m 모델 사용 (스트링 조건을 혼용, 배치 8)
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s200_m \
+    --model models/yolo11m.pt \
+    --epochs 400 \
+    --batch 8 \
+    --device cuda \
+    --amp True \
+    --output ./workspace/train_s200_m_b8
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s200_m_b8/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s200_m \
+    --select-top 20
+
+# 샘플 200개, pv string 및 pv panel, other 지정, nagative 추가, m 모델 사용 (스트링 조건을 명확히)
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s200_m_2 \
+    --model models/yolo11m.pt \
+    --epochs 400 \
+    --device cuda \
+    --amp True \
+    --output ./workspace/train_s200_m_2
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s200_m_2/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s200_m_2 \
+    --select-top 20
+
+# 샘플 200개, pv string 및 pv panel, other 지정, nagative 추가, m 모델 사용 (스트링 조건을 명확히, 배치 8)
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s200_m_2 \
+    --model models/yolo11m.pt \
+    --epochs 400 \
+    --batch 8 \
+    --device cuda \
+    --amp True \
+    --output ./workspace/train_s200_m_2_b8
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s200_m_2_b8/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s200_m_2 \
+    --select-top 20
 """
 
 from __future__ import annotations
@@ -199,13 +360,14 @@ def main() -> None:
     p.add_argument("--images",      type=Path, required=True)
     p.add_argument("--seed-labels", type=Path, required=True)
     p.add_argument("--output",      type=Path, required=True)
-    p.add_argument("--classes",     nargs="+", default=["pv_string", "pv_module", "other"])
+    p.add_argument("--classes",     nargs="+", default=["pv_string", "pv_module", "other", "defect"])
     p.add_argument("--epochs",      type=int, default=50)
     p.add_argument("--imgsz",       type=int, default=1280)
     p.add_argument("--batch",       type=int, default=4)
     p.add_argument("--model",       default="models/yolo11n.pt")
-    p.add_argument("--device",      default="mps", choices=["cpu", "gpu", "mps"])
+    p.add_argument("--device",      default="mps", choices=["cpu", "gpu", "cuda", "mps"])
     p.add_argument("--val-ratio",   type=float, default=0.2)
+    p.add_argument("--amp",         type=bool, default=False)
 
     # predict
     p = sub.add_parser("predict", help="현재 모델로 예측 + uncertainty 점수")
@@ -225,9 +387,9 @@ def main() -> None:
     p = sub.add_parser("iterate", help="predict + select 자동 실행")
     p.add_argument("--images",     type=Path, required=True)
     p.add_argument("--model",      type=Path, required=True)
-    p.add_argument("--device",     default="mps", choices=["cpu", "gpu", "mps"])
+    p.add_argument("--device",     default="mps", choices=["cpu", "gpu", "cuda", "mps"])
     p.add_argument("--output",     type=Path, required=True)
-    p.add_argument("--classes",    nargs="+", default=["pv_string", "pv_module", "other"])
+    p.add_argument("--classes",    nargs="+", default=["pv_string", "pv_module", "other", "defect"])
     p.add_argument("--select-top", type=int, default=20)
     p.add_argument("--conf",       type=float, default=0.2)
     p.add_argument("--imgsz",      type=int, default=1280)
@@ -240,6 +402,7 @@ def main() -> None:
             val_ratio=args.val_ratio, epochs=args.epochs,
             imgsz=args.imgsz, batch=args.batch, model=args.model,
             device=args.device,
+            amp=args.amp,
         )
     elif args.cmd == "predict":
         cmd_predict(args.images, args.model, args.output,

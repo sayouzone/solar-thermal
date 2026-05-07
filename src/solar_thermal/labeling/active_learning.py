@@ -31,10 +31,10 @@ PV Self-Training Active Learning Loop
         --output workspace/round_0
 
     # Round 1+: 자동 라벨 → 샘플 선별
-    python active_learning.py iterate \\
-        --images data/unlabeled \\
-        --model workspace/round_0/weights/best.pt \\
-        --output workspace/round_1 \\
+    python active_learning.py iterate \
+        --images data/unlabeled \
+        --model workspace/round_0/weights/best.pt \
+        --output workspace/round_1 \
         --select-top 20
 """
 
@@ -55,7 +55,6 @@ from collections import defaultdict
 from datetime import timedelta
 from statistics import mean
 
-#from ultralytics import YOLO
 try:
     from ultralytics import YOLO
 except ImportError:
@@ -313,6 +312,20 @@ def dedup_by_aspect(
 
     return [predictions[i] for i in range(n) if i in keep]
 
+# 학습 직전 자동 실행
+def preprocess_before_training(labels_dir: Path):
+    for label_file in labels_dir.glob("*.txt"):
+        boxes = read_yolo_labels(label_file)
+        # aspect 기반으로 충돌 자동 해결
+        cleaned = dedup_by_aspect(
+            boxes,
+            iou_threshold=0.5,
+            aspect_low=3.0,
+            aspect_high=4.0,
+            middle_prefer=1,
+        )
+        write_yolo_labels(label_file, cleaned)
+
 # ---------------------------------------------------------------------------
 # Workflow commands
 # ---------------------------------------------------------------------------
@@ -373,6 +386,7 @@ def cmd_seed(
 
     # 3) data.yaml
     yaml_path = dataset_dir / "data.yaml"
+    print("yaml path", yaml_path)
     yaml_path.write_text(yaml.safe_dump({
         "path":  str(dataset_dir.resolve()),
         "train": "images/train",
@@ -600,6 +614,7 @@ def main() -> None:
     p.add_argument("--model",       default="models/yolo11n.pt")
     p.add_argument("--device",      type=str, default="cpu")
     p.add_argument("--val-ratio",   type=float, default=0.2)
+    p.add_argument("--amp",         type=bool, default=False)
 
     # predict
     p = sub.add_parser("predict", help="현재 모델로 예측 + uncertainty 점수")
@@ -633,6 +648,7 @@ def main() -> None:
             val_ratio=args.val_ratio, epochs=args.epochs,
             imgsz=args.imgsz, batch=args.batch, model=args.model,
             device=args.device,
+            amp=args.amp,
         )
     elif args.cmd == "predict":
         cmd_predict(args.images, args.model, args.output,

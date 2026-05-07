@@ -92,10 +92,11 @@ log = logging.getLogger(__name__)
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--images",       type=Path, required=True)
-    ap.add_argument("--work-dir",     type=Path, default=Path("workspace"))
+    ap.add_argument("--work-dir",     type=Path, default=Path("workspace/labels"))
+    ap.add_argument("--labels-dir",     type=Path, default=Path("workspace"))
     ap.add_argument("--strategy",     default="heuristic",
                     choices=["heuristic", "sam2", "yolo_world", "finetuned"])
-    ap.add_argument("--classes",      nargs="+", default=["solar_panel"])
+    ap.add_argument("--classes",      nargs="+", default=["pv_string", "pv_module", "other", "defect"])
     ap.add_argument("--steps",        nargs="+",
                     choices=["auto_label", "verify", "report", "visualize", "split", "train", "inference", "all"],
                     default=["auto_label", "verify", "report", "visualize", "split"],)
@@ -157,7 +158,10 @@ def main() -> None:
         log.info("=" * 60)
         log.info("STEP 2: Visualizing labels for review")
         log.info("=" * 60)
+
+        labels_dir = args.labels_dir
         visualize(args.images, labels_dir, visual_dir, args.classes)
+
         log.info("검수용 이미지: %s", visual_dir)
         log.info("→ 잘못된 bbox는 Label Studio에서 수동 수정을 권장합니다.")
 

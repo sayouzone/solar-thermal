@@ -12,6 +12,11 @@ Solar Panel YOLO 데이터셋 부트스트랩 스크립트
         --source /path/to/raw/DJI_photos \
         --out ./solar_panels_dataset \
         --train 0.7 --val 0.2 --test 0.1
+
+    python scripts/bootstrap_yolo_dataset.py \
+        --source '/Users/seongjungkim/Downloads/태양광 발전소/RGB' \
+        --out ./data/solar/images \
+        --train 0.7 --val 0.2 --test 0.1
 """
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
 # Core ML / CV
-ultralytics>=8.3.0          # YOLOv8/YOLOv11
+ultralytics>=8.4.42          # YOLOv8/YOLOv11
 torch>=2.1.0
 torchvision>=0.16.0
 opencv-python-headless>=4.9.0

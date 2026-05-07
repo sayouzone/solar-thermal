@@ -90,7 +90,8 @@ if __name__ == "__main__":
             print(f"  #{i}: {d.class_name} conf={d.confidence:.3f} bbox={d.bbox_xyxy}")
 
     # 3) SAM 2.1 로 클래스 무관 세그멘테이션 → CLIP 으로 의미 필터링
-    sam_ckpt = "models/sam2_hiera_large.pt"
+    #sam_ckpt = "models/sam2_hiera_large.pt"
+    sam_ckpt = "models/sam2_b.pt"
     sam_cfg = "sam2_hiera_l.yaml"
     threshold = 0.25
     detector = SamClipSolarDetector(
