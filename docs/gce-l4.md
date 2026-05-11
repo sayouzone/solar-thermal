@@ -10,6 +10,7 @@ x86/64, amd64 noble minimal image
 sudo apt update
 sudo apt -y upgrade
 sudo apt install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev
+sudo apt install -y python3-pip python3-venv
 sudo apt install -y nano screen
 ```
 
@@ -203,6 +204,49 @@ sudo make altinstall
 python3 --version
 python --version
 pip --version
+```
+
+## 기존 Disk에서 소스 복사
+
+#### Persistent Disk 추가
+
+```bash
+sudo mkdir -p /mnt/new_disk
+```
+
+```bash
+lsblk
+NAME         MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS
+loop0          7:0    0    74M  1 loop /snap/core22/2411
+loop1          7:1    0 441.5M  1 loop /snap/google-cloud-cli/446
+loop2          7:2    0  48.4M  1 loop /snap/snapd/26382
+nvme0n1      259:0    0   200G  0 disk 
+├─nvme0n1p1  259:1    0 198.9G  0 part /
+├─nvme0n1p13 259:2    0  1023M  0 part /boot
+├─nvme0n1p14 259:3    0     4M  0 part 
+└─nvme0n1p15 259:4    0   106M  0 part /boot/efi
+nvme0n2      259:5    0   200G  0 disk 
+├─nvme0n2p1  259:6    0 198.9G  0 part 
+├─nvme0n2p13 259:7    0  1023M  0 part 
+├─nvme0n2p14 259:8    0     4M  0 part 
+└─nvme0n2p15 259:9    0   106M  0 part 
+```
+
+```bash
+sudo mount -o discard,defaults /dev/nvme0n2p1 /mnt/new_disk
+
+sudo cp -r /mnt/new_disk/home/sjkim/.venv/ .
+sudo cp -r /mnt/new_disk/home/sjkim/solar-thermal/ .
+```
+
+```bash
+sudo chown -R sjkim .venv
+sudo chgrp -R sjkim .venv
+sudo chown -R sjkim solar-thermal
+sudo chgrp -R sjkim solar-thermal
+```
+
+```bash
 ```
 
 ####

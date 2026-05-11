@@ -327,6 +327,32 @@ python scripts/run_active_training.py iterate \
     --device mps \
     --output ./workspace/predict_s200_m_2 \
     --select-top 20
+
+# 샘플 100개, pv string 및 pv panel, other, defect 지정, nagative 추가, m 모델 사용 (스트링 조건을 명확히, 배치 8)
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s100_m_d \
+    --model models/yolo11m.pt \
+    --epochs 200 \
+    --device cuda \
+    --amp True \
+    --output ./workspace/train_s100_m_d
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s100_m_d/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s100_m_d \
+    --select-top 20
+
+# 샘플 100개, pv string 및 pv panel, other, defect 지정, nagative 추가, m 모델 사용, MacOS에서 학습 (device=mps) <- 중간에 중지시킴
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s100_m_d \
+    --model models/yolo11m.pt \
+    --epochs 200 \
+    --device mps \
+    --output ./workspace/train_s100_m_d
 """
 
 from __future__ import annotations

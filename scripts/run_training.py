@@ -61,6 +61,14 @@ End-to-End 파이프라인 실행
         --classes solar_panel \
         --steps inference \
         --train-epochs 100
+
+python scripts/run_training.py \
+        --images data/solar/images/RGB \
+        --labels-dir ./workspace/predict_s100_m_d/predicted_labels \
+        --visual-dir ./workspace/visualized \
+        --strategy sam2 \
+        --classes solar_panel \
+        --steps visualize
 """
 
 from __future__ import annotations
@@ -92,8 +100,9 @@ log = logging.getLogger(__name__)
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--images",       type=Path, required=True)
-    ap.add_argument("--work-dir",     type=Path, default=Path("workspace/labels"))
-    ap.add_argument("--labels-dir",     type=Path, default=Path("workspace"))
+    ap.add_argument("--work-dir",     type=Path, default=Path("workspace"))
+    ap.add_argument("--labels-dir",     type=Path, default=Path("workspace/labels"))
+    ap.add_argument("--visual-dir",     type=Path, default=Path("workspace/visualized"))
     ap.add_argument("--strategy",     default="heuristic",
                     choices=["heuristic", "sam2", "yolo_world", "finetuned"])
     ap.add_argument("--classes",      nargs="+", default=["pv_string", "pv_module", "other", "defect"])
@@ -160,6 +169,7 @@ def main() -> None:
         log.info("=" * 60)
 
         labels_dir = args.labels_dir
+        visual_dir = args.visual_dir
         visualize(args.images, labels_dir, visual_dir, args.classes)
 
         log.info("검수용 이미지: %s", visual_dir)
