@@ -10,15 +10,15 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from solar_thermal.calibraton.h20t.config import CalibrationConfig
-from solar_thermal.calibraton.h20t.corner_detection import collect_corner_pairs
-from solar_thermal.calibraton.h20t.intrinsic import (
+from solar_thermal.calibration.h20t.config import CalibrationConfig
+from solar_thermal.calibration.h20t.corner_detection import collect_corner_pairs
+from solar_thermal.calibration.h20t.intrinsic import (
     calibrate_intrinsic, remove_outliers
 )
-from solar_thermal.calibraton.h20t.stereo import (
+from solar_thermal.calibration.h20t.stereo import (
     calibrate_stereo, validate_stereo_calibration
 )
-from solar_thermal.calibraton.h20t.validation import save_calibration
+from solar_thermal.calibration.h20t.validation import save_calibration
 
 
 def main():

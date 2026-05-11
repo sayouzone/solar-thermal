@@ -8,9 +8,13 @@ from typing import Optional, List, Tuple
 
 import numpy as np
 
-from .dji import (
-    CameraIntrinsics, 
-    dji_gimbal_to_camera_rotation
+from .metadata import (
+    DJIMetadata,
+    CameraIntrinsics,
+    parse_dji_metadata,
+    estimate_zh20t_zoom_intrinsics,
+    estimate_intrinsics_from_metadata,
+    dji_gimbal_to_camera_rotation, estimate_zh20t_thermal_intrinsics
 )
 from .coordinates import (
     ENUPoint,
@@ -19,7 +23,6 @@ from .coordinates import (
     geodetic_to_enu,
 )
 from .camera_pose import compute_camera_axes_from_gimbal, verify_nadir_orientation
-from .metadata import DJIMetadata, estimate_intrinsics_from_metadata
 
 @dataclass
 class GeoreferencingResult:

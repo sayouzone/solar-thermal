@@ -19,8 +19,9 @@ from typing import Optional, List, Tuple
 
 import numpy as np
 
-from .dji import (
-    DJIMetadata, parse_dji_metadata, 
+from .metadata import (
+    DJIMetadata,
+    parse_dji_metadata,
     estimate_zh20t_zoom_intrinsics, 
     dji_gimbal_to_camera_rotation, estimate_zh20t_thermal_intrinsics
 )

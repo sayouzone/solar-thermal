@@ -2,10 +2,11 @@
 업로드된 DJI 사진으로 georeferencing 실행
 """
 import json
+import math
 import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Sequence, Tuple, Dict, Any
 
 import numpy as np
 
@@ -13,7 +14,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from solar_thermal.georeferencing.dji.metadata import DJIMetadata, extract_dji_metadata, estimate_intrinsics_from_metadata
+from solar_thermal.georeferencing.dji.camera_pose import compute_camera_axes_from_gimbal, verify_nadir_orientation
+from solar_thermal.georeferencing.dji.metadata import DJIMetadata, M_PER_DEG_LAT, extract_dji_metadata, estimate_intrinsics_from_metadata
 from solar_thermal.georeferencing.dji.georeferencer import DJIImageGeoreferencer
 from solar_thermal.georeferencing.dji.coordinates import geodetic_to_enu, GeodeticPoint
 from solar_thermal.georeferencing.yolo_to_geo import (
@@ -63,8 +65,106 @@ class LabelImageScale:
             self.label_ref_width != self.actual_width
             or self.label_ref_height != self.actual_height
         )
- 
- 
+
+# --------------------------------------------------------------------------- #
+# 3. 픽셀 → 지면 투영 (광선-평면 교차)
+# --------------------------------------------------------------------------- #
+
+def _pixel_to_camera_ray(
+        px: float, 
+        py: float, 
+        metadata: DJIMetadata
+    ) -> np.ndarray:
+    """
+    픽셀(좌상단 원점) → 카메라 좌표계 단위 광선 (X=Right, Y=Down, Z=Forward).
+
+    초점거리(픽셀 단위) f_px = (W/2) / tan(HFOV/2)
+    image center를 (cx, cy) = (W/2, H/2)로 가정.
+    """
+
+    """
+    초점거리(픽셀 단위) f_px = (W/2) / tan(HFOV/2)
+    FOV 대신 EXIF FocalLengthIn35mmFilm 기반으로 계산.
+    DJI H20T Zoom 카메라는 매 사진마다 줌 비율이 달라 FOV도 달라짐.
+    따라서 pose.hfov_deg, pose.vfov_deg는 EXIF 기반으로 계산된 동적 FOV입니다.
+    """
+    fx_px = (metadata.image_width / 2.0) / math.tan(math.radians(metadata.hfov_deg / 2.0))
+    fy_px = (metadata.image_height / 2.0) / math.tan(math.radians(metadata.vfov_deg / 2.0))
+
+    """
+    image center를 (cx, cy) = (W/2, H/2)로 가정.
+    OpenCV pinhole: x_cam = (px - cx)/fx, y_cam = (py - cy)/fy, z_cam = 1
+    따라서 cx, cy는 이미지 중심의 픽셀 좌표입니다.
+    """
+    cx_px = metadata.image_width / 2.0
+    cy_px = metadata.image_height / 2.0
+
+    # OpenCV pinhole: x_cam = (px - cx)/fx, y_cam = (py - cy)/fy, z_cam = 1
+    ray_cam = np.array([
+        (px - cx_px) / fx_px,
+        (py - cy_px) / fy_px,
+        1.0,
+    ])
+    return ray_cam / np.linalg.norm(ray_cam)
+
+def _pixel_to_ground_enu(
+    px: float, py: float,
+    metadata: DJIMetadata,
+    ground_z_below_drone: float | None = None,
+) -> tuple[float, float]:
+    """
+    픽셀 → 카메라 nadir 발끝 기준 (East, North) 미터 오프셋.
+
+    ground_z_below_drone : 드론에서 본 지면의 z 값(ENU에서 -AGL).
+                           기본 None이면 -pose.rel_alt_m.
+                           DEM 쓰면 픽셀별로 달리 줄 수 있음.
+    """
+    if ground_z_below_drone is None:
+        """드론에서 본 지면의 z 값(ENU에서 -AGL)"""
+        ground_z_below_drone = -metadata.relative_altitude   # 드론보다 AGL만큼 아래
+
+    # (1) 카메라 좌표 광선 → ENU 광선
+    ray_cam = _pixel_to_camera_ray(px, py, metadata)
+    ray_enu = metadata.R_cam_to_enu @ ray_cam        # 3-vec in ENU
+
+    # (2) 평면 z = ground_z_below_drone 와의 교차
+    #     drone 위치를 원점(0,0,0)이라 두면 광선식: P = t * ray_enu
+    #     ground_z_below_drone = t * ray_enu[2]
+    if ray_enu[2] >= -1e-9:
+        # 광선이 지면을 만나지 않거나 위로 향함 (잘못된 입력)
+        raise ValueError(
+            f"광선이 지면을 향하지 않음 (gimbal pitch={metadata.gimbal_pitch}°). "
+            f"ray_enu={ray_enu.tolist()}"
+        )
+    t = ground_z_below_drone / ray_enu[2]
+    east  = t * ray_enu[0]
+    north = t * ray_enu[1]
+    return east, north
+
+
+def _enu_to_lonlat(east_m: float, north_m: float, metadata: DJIMetadata) -> list[float]:
+    """ENU 오프셋 → (lon, lat) 좌표. pose의 (lon, lat)을 기준으로 미터 단위 오프셋을 도 단위로 변환하여 더한다."""
+    return [
+        metadata.gps_longitude + east_m / metadata.m_per_deg_lon,
+        metadata.gps_latitude + north_m / M_PER_DEG_LAT,
+    ]
+
+# --------------------------------------------------------------------------- #
+# 4. Public API: bbox / YOLO label → GeoJSON
+# --------------------------------------------------------------------------- #
+
+def pixel_bbox_to_polygon(
+    bbox_xyxy: Sequence[float], metadata: DJIMetadata,
+) -> list[list[float]]:
+    """픽셀 bbox(x1,y1,x2,y2) → GeoJSON Polygon ring [[lon,lat], ...]"""
+    x1, y1, x2, y2 = bbox_xyxy
+    corners = [(x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)]
+    ring = []
+    for px, py in corners:
+        e, n = _pixel_to_ground_enu(px, py, metadata)
+        ring.append(_enu_to_lonlat(e, n, metadata))
+    return ring
+
 def correct_yolo_for_stretch(
     detection: YOLODetection,
     scale: LabelImageScale,
@@ -331,6 +431,11 @@ def extract_rgb_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMe
 
     features = []
 
+    # nadir 검증 (경고만, 차단은 안 함)
+    nadir_check = verify_nadir_orientation(metadata.R_cam_to_enu, tolerance_deg=10.0)
+    is_oblique = not nadir_check['is_nadir']
+
+    """
     coverage_coords = [[c.longitude, c.latitude] for c in corners]
     coverage_coords.append([corners[0].longitude, corners[0].latitude])
     features.append({
@@ -339,9 +444,36 @@ def extract_rgb_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMe
         "properties": {
             "name": "image_coverage",
             "image_path": metadata.image_path,
+            'camera_model': metadata.camera_model,
+            
+        }
+    })
+    """
+    # (a) image footprint
+    footprint_ring = pixel_bbox_to_polygon(
+        (0, 0, metadata.image_width, metadata.image_height), metadata,
+    )
+
+    features.append({
+        "type": "Feature",
+        "geometry": {"type": "Polygon", "coordinates": [footprint_ring]},
+        "properties": {
+            "name": "image_coverage",
+            "image_path": metadata.image_path,
+            "camera_model": metadata.camera_model,
+            "focal_35mm_eq": metadata.focal_length_35mm,
+            "hfov_deg": round(metadata.hfov_deg, 2),
+            "vfov_deg": round(metadata.vfov_deg, 2),
+            "rel_alt_m": metadata.relative_altitude,
+            "gimbal_pitch_deg": metadata.gimbal_pitch_deg,
+            "gimbal_yaw_compass_deg": metadata.gimbal_yaw_deg,
+            "gimbal_roll_deg": metadata.gimbal_roll_deg,
+            "oblique_view": is_oblique,
+            "angle_from_nadir_deg": round(nadir_check["angle_from_nadir_deg"], 2),
         }
     })
 
+    """
     features.append({
         "type": "Feature",
         "geometry": {
@@ -354,7 +486,22 @@ def extract_rgb_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMe
             "gimbal_pitch": metadata.gimbal_pitch_deg,
         }
     })
+    """
+    features.append({
+        "type": "Feature",
+        "geometry": {
+            "type": "Point",
+            "coordinates": [metadata.gps_longitude, metadata.gps_latitude]
+        },
+        "properties": {
+            "name": "drone_position",
+            "rel_altitude_m": metadata.relative_altitude,
+            "abs_altitude_m": metadata.absolute_altitude,
+            "rtk_active": metadata.rtk_active,
+        }
+    })
 
+    """
     for name, x, y, w, h in extracted_bboxes:
         bbox_corners = gr.bbox_to_geodetic((x, y, x + w, y + h))
         if bbox_corners:
@@ -365,8 +512,60 @@ def extract_rgb_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMe
                 "geometry": {"type": "Polygon", "coordinates": [poly]},
                 "properties": {"name": name, "type": "detection_box"}
             })
+    """
+    for i, det in enumerate(detections):
+        cls_name = SOLAR_RGB_CLASSES.get(det.class_id, f"class_{det.class_id}")
+        x1, y1, x2, y2 = det.to_pixel_xyxy(metadata.image_width, metadata.image_height)
+        ring = pixel_bbox_to_polygon((x1, y1, x2, y2), metadata)
+        print(ring)
 
+        # 지면상 크기 (참고용)
+        e_corners = [_pixel_to_ground_enu(px, py, metadata)
+                     for px, py in [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]]
+        es = [c[0] for c in e_corners]; ns = [c[1] for c in e_corners]
+        width_m  = max(es) - min(es)
+        height_m = max(ns) - min(ns)
+
+        feature = {
+            "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": [ring]},
+            "properties": {
+                "class_id": det.class_id,
+                "class_name": cls_name,
+                "pixel_bbox": [round(x1, 1), round(y1, 1),
+                               round(x2, 1), round(y2, 1)],
+                "width_m": round(width_m, 3),
+                "height_m": round(height_m, 3),
+                "area_m2": round(width_m * height_m, 3),
+                "type": "detection_box",
+            },
+        }
+
+        features.append(feature)
+
+    """
     geojson = {"type": "FeatureCollection", "features": features}
+    """
+    geojson = {
+        "type": "FeatureCollection", 
+        "features": features,
+        "metadata": {
+            "image_path": image_path,
+            "modality": "rgb",
+            "camera": f"ZH20T_{metadata.camera_model.capitalize()}",
+            "image_native_size": [metadata.image_width, metadata.image_height],
+            "focal_35mm_eq": metadata.focal_length_35mm,
+            "hfov_deg": round(metadata.hfov_deg, 4),
+            "vfov_deg": round(metadata.vfov_deg, 4),
+            "capture_time": metadata.capture_time,
+            "rtk_active": metadata.rtk_active,
+            "gimbal": {
+                "yaw_compass_deg": metadata.gimbal_yaw_deg,
+                "pitch_deg": metadata.gimbal_pitch_deg,
+                "roll_deg": metadata.gimbal_roll_deg,
+            },
+        },
+    }
     with open(geojson_path, "w") as f:
         json.dump(geojson, f, indent=2)
 
@@ -508,8 +707,8 @@ def main():
     yolo_label = rgb_yolo_label
 
     rgb_metadata = extract_rgb_geo(image_path = rgb_path, yolo_label = rgb_yolo_label, output_path = output_path)
-    print(rgb_metadata, type(rgb_metadata))
-    #ir_metadata = extract_ir_geo(image_path = ir_path, yolo_label = ir_yolo_label, output_path = output_path)
+    #print(rgb_metadata, type(rgb_metadata))
+    ir_metadata = extract_ir_geo(image_path = ir_path, yolo_label = ir_yolo_label, output_path = output_path)
     #print(ir_metadata, type(ir_metadata))
 
 if __name__ == "__main__":

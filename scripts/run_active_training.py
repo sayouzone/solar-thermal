@@ -328,7 +328,7 @@ python scripts/run_active_training.py iterate \
     --output ./workspace/predict_s200_m_2 \
     --select-top 20
 
-# 샘플 100개, pv string 및 pv panel, other, defect 지정, nagative 추가, m 모델 사용 (스트링 조건을 명확히, 배치 8)
+# 샘플 100개, pv string 및 pv panel, other, defect 지정, nagative 추가, m 모델 사용 (스트링 조건을 명확히, 배치 4)
 python scripts/run_active_training.py seed \
     --images data/solar/images/RGB \
     --seed-labels ./workspace/labels_s100_m_d \
@@ -353,6 +353,42 @@ python scripts/run_active_training.py seed \
     --epochs 200 \
     --device mps \
     --output ./workspace/train_s100_m_d
+
+# 샘플 200개, pv string 및 pv panel, other, defect 지정, nagative 추가, m 모델 사용 (스트링 조건을 명확히, 배치 8)
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s200_m_d \
+    --model models/yolo11m.pt \
+    --epochs 400 \
+    --batch 8 \
+    --device cuda \
+    --amp True \
+    --output ./workspace/train_s200_m_d
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s200_m_d/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s200_m_d \
+    --select-top 20
+
+# 샘플 200개, pv string 및 pv panel, other, defect 지정, nagative 추가, x 모델 사용 (스트링 조건을 명확히, 배치 8)
+python scripts/run_active_training.py seed \
+    --images data/solar/images/RGB \
+    --seed-labels ./workspace/labels_s200_x_d \
+    --model models/yolo11x.pt \
+    --epochs 400 \
+    --batch 8 \
+    --device cuda \
+    --amp True \
+    --output ./workspace/train_s200_x_d
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s200_x_d/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s200_x_d \
+    --select-top 20
 """
 
 from __future__ import annotations

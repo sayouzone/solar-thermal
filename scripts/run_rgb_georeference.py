@@ -42,7 +42,16 @@ sys.path.insert(0, str(ROOT / "src"))
 # 동일 패키지 내 camera_pose.py
 from solar_thermal.georeferencing.dji.camera_pose import compute_camera_axes_from_gimbal, verify_nadir_orientation
 from solar_thermal.georeferencing.dji.metadata import DJIMetadata, M_PER_DEG_LAT, extract_dji_metadata
+from solar_thermal.georeferencing.yolo_to_geo import (
+    parse_yolo_label_file,
+)
 
+SOLAR_RGB_CLASSES = {
+    0: "panel_string",
+    1: "panel",
+    2: "non_panel",
+    3: "anomaly",
+}
 
 # --------------------------------------------------------------------------- #
 # 3. 픽셀 → 지면 투영 (광선-평면 교차)
@@ -168,7 +177,6 @@ def georeference_rgb(
     class_names: dict[int, str] = DEFAULT_CLASS_NAMES,
 ) -> dict:
     """RGB 이미지 + YOLO TXT → GeoJSON FeatureCollection"""
-    #meta = read_pose(image_path)
     meta = extract_dji_metadata(image_path)
     print("DJIMetadata", meta)
 
@@ -176,13 +184,15 @@ def georeference_rgb(
     nadir_check = verify_nadir_orientation(meta.R_cam_to_enu, tolerance_deg=10.0)
     is_oblique = not nadir_check['is_nadir']
 
+    rgb_features: list[dict] = []
     features: list[dict] = []
 
     # (a) image footprint
     footprint_ring = pixel_bbox_to_polygon(
         (0, 0, meta.image_width, meta.image_height), meta,
     )
-    features.append({
+
+    feature = {
         'type': 'Feature',
         'geometry': {'type': 'Polygon', 'coordinates': [footprint_ring]},
         'properties': {
@@ -199,10 +209,12 @@ def georeference_rgb(
             'oblique_view': is_oblique,
             'angle_from_nadir_deg': round(nadir_check['angle_from_nadir_deg'], 2),
         },
-    })
+    }
+    rgb_features.append(feature)
+    features.append(feature)
 
     # (b) drone position (Point)
-    features.append({
+    feature = {
         'type': 'Feature',
         'geometry': {'type': 'Point', 'coordinates': [meta.gps_longitude, meta.gps_latitude]},
         'properties': {
@@ -211,10 +223,45 @@ def georeference_rgb(
             'abs_altitude_m': meta.absolute_altitude,
             'rtk_active': meta.rtk_active,
         },
-    })
+    }
+    rgb_features.append(feature)
+    features.append(feature)
 
     # (c) YOLO 검출 박스
+    detections = parse_yolo_label_file(label_path, has_confidence=False)
+    #print(detections)
+    for i, det in enumerate(detections):
+        cls_name = SOLAR_RGB_CLASSES.get(det.class_id, f"class_{det.class_id}")
+        x1, y1, x2, y2 = det.to_pixel_xyxy(meta.image_width, meta.image_height)
+        ring = pixel_bbox_to_polygon((x1, y1, x2, y2), meta)
+        print(ring)
+
+        # 지면상 크기 (참고용)
+        e_corners = [_pixel_to_ground_enu(px, py, meta)
+                     for px, py in [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]]
+        es = [c[0] for c in e_corners]; ns = [c[1] for c in e_corners]
+        width_m  = max(es) - min(es)
+        height_m = max(ns) - min(ns)
+
+        feature = {
+            'type': 'Feature',
+            'geometry': {'type': 'Polygon', 'coordinates': [ring]},
+            'properties': {
+                'class_id': det.class_id,
+                'class_name': cls_name,
+                'pixel_bbox': [round(x1, 1), round(y1, 1),
+                               round(x2, 1), round(y2, 1)],
+                'width_m': round(width_m, 3),
+                'height_m': round(height_m, 3),
+                'area_m2': round(width_m * height_m, 3),
+                'type': 'detection_box',
+            },
+        }
+
+        rgb_features.append(feature)
+    
     label_lines = Path(label_path).read_text().strip().splitlines()
+    #print(label_lines)
     for ln in label_lines:
         parts = ln.split()
         if len(parts) < 5:
@@ -225,7 +272,9 @@ def georeference_rgb(
         x1, y1, x2, y2 = yolo_label_to_pixels(
             cx_n, cy_n, w_n, h_n, meta.image_width, meta.image_height,
         )
+        print(x1, y1, x2, y2)
         ring = pixel_bbox_to_polygon((x1, y1, x2, y2), meta)
+        print(ring)
 
         # 지면상 크기 (참고용)
         e_corners = [_pixel_to_ground_enu(px, py, meta)
@@ -248,6 +297,28 @@ def georeference_rgb(
                 'type': 'detection_box',
             },
         })
+
+    out = {
+        'type': 'FeatureCollection',
+        'features': rgb_features,
+        'metadata': {
+            'image_path': str(image_path),
+            'modality': 'rgb',
+            'camera': f'ZH20T_{meta.camera_model.capitalize()}',
+            'image_native_size': [meta.image_width, meta.image_height],
+            'focal_35mm_eq': meta.focal_length_35mm,
+            'hfov_deg': round(meta.hfov_deg, 4),
+            'vfov_deg': round(meta.vfov_deg, 4),
+            'capture_time': meta.capture_time,
+            'rtk_active': meta.rtk_active,
+            'gimbal': {
+                'yaw_compass_deg': meta.gimbal_yaw_deg,
+                'pitch_deg': meta.gimbal_pitch_deg,
+                'roll_deg': meta.gimbal_roll_deg,
+            },
+        },
+    }
+    print(json.dumps(out, indent=2, ensure_ascii=False))
 
     return {
         'type': 'FeatureCollection',
