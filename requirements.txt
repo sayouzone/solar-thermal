@@ -40,3 +40,6 @@ exifread>=3.5.1
 
 sam2>=1.1.0
 open-clip-torch>=3.3.0
+
+pyproj>=3.7.2
+rasterio>=1.4.4

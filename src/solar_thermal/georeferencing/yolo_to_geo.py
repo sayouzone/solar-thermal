@@ -297,12 +297,17 @@ def convert_yolo_file_to_geo(
 
 
 def export_to_geojson(
+    cover: dict,
+    drone: dict,
     detections: List[GeoreferencedDetection],
     output_path: str,
     image_metadata: Optional[Dict[str, Any]] = None,
 ) -> None:
     """검출 결과를 GeoJSON으로 export"""
-    features = [d.to_geojson_feature() for d in detections]
+    #features = [d.to_geojson_feature() for d in detections]
+    features = [cover, drone]
+    for d in detections:
+        features.append(d.to_geojson_feature())
     
     geojson = {
         "type": "FeatureCollection",

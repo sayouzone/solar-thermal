@@ -14,16 +14,17 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+
+from solar_thermal.image.metadata import ImageMetadata, extract_metadata, estimate_intrinsics_from_metadata
+
 from solar_thermal.georeferencing.dji.camera_pose import compute_camera_axes_from_gimbal, verify_nadir_orientation
-from solar_thermal.georeferencing.dji.metadata import DJIMetadata, M_PER_DEG_LAT, extract_dji_metadata, estimate_intrinsics_from_metadata
+from solar_thermal.georeferencing.dji.metadata import DJIMetadata, M_PER_DEG_LAT, extract_dji_metadata#, estimate_intrinsics_from_metadata
 from solar_thermal.georeferencing.dji.georeferencer import DJIImageGeoreferencer
 from solar_thermal.georeferencing.dji.coordinates import geodetic_to_enu, GeodeticPoint
 from solar_thermal.georeferencing.yolo_to_geo import (
     YOLODetection,
     GeoreferencedDetection,
     parse_yolo_label_file,
-    convert_yolo_to_geo,
-    convert_yolo_file_to_geo,
     export_to_geojson,
     export_to_csv,
     _compute_polygon_area_m2,
@@ -73,7 +74,7 @@ class LabelImageScale:
 def _pixel_to_camera_ray(
         px: float, 
         py: float, 
-        metadata: DJIMetadata
+        metadata: ImageMetadata
     ) -> np.ndarray:
     """
     픽셀(좌상단 원점) → 카메라 좌표계 단위 광선 (X=Right, Y=Down, Z=Forward).
@@ -88,16 +89,16 @@ def _pixel_to_camera_ray(
     DJI H20T Zoom 카메라는 매 사진마다 줌 비율이 달라 FOV도 달라짐.
     따라서 pose.hfov_deg, pose.vfov_deg는 EXIF 기반으로 계산된 동적 FOV입니다.
     """
-    fx_px = (metadata.image_width / 2.0) / math.tan(math.radians(metadata.hfov_deg / 2.0))
-    fy_px = (metadata.image_height / 2.0) / math.tan(math.radians(metadata.vfov_deg / 2.0))
+    fx_px = (metadata.width / 2.0) / math.tan(math.radians(metadata.hfov_deg / 2.0))
+    fy_px = (metadata.height / 2.0) / math.tan(math.radians(metadata.vfov_deg / 2.0))
 
     """
     image center를 (cx, cy) = (W/2, H/2)로 가정.
     OpenCV pinhole: x_cam = (px - cx)/fx, y_cam = (py - cy)/fy, z_cam = 1
     따라서 cx, cy는 이미지 중심의 픽셀 좌표입니다.
     """
-    cx_px = metadata.image_width / 2.0
-    cy_px = metadata.image_height / 2.0
+    cx_px = metadata.width / 2.0
+    cy_px = metadata.height / 2.0
 
     # OpenCV pinhole: x_cam = (px - cx)/fx, y_cam = (py - cy)/fy, z_cam = 1
     ray_cam = np.array([
@@ -121,7 +122,7 @@ def _pixel_to_ground_enu(
     """
     if ground_z_below_drone is None:
         """드론에서 본 지면의 z 값(ENU에서 -AGL)"""
-        ground_z_below_drone = -metadata.relative_altitude   # 드론보다 AGL만큼 아래
+        ground_z_below_drone = -metadata.relative_height   # 드론보다 AGL만큼 아래
 
     # (1) 카메라 좌표 광선 → ENU 광선
     ray_cam = _pixel_to_camera_ray(px, py, metadata)
@@ -133,7 +134,7 @@ def _pixel_to_ground_enu(
     if ray_enu[2] >= -1e-9:
         # 광선이 지면을 만나지 않거나 위로 향함 (잘못된 입력)
         raise ValueError(
-            f"광선이 지면을 향하지 않음 (gimbal pitch={metadata.gimbal_pitch}°). "
+            f"광선이 지면을 향하지 않음 (gimbal pitch={metadata.gimbal_pitch_deg}°). "
             f"ray_enu={ray_enu.tolist()}"
         )
     t = ground_z_below_drone / ray_enu[2]
@@ -145,8 +146,8 @@ def _pixel_to_ground_enu(
 def _enu_to_lonlat(east_m: float, north_m: float, metadata: DJIMetadata) -> list[float]:
     """ENU 오프셋 → (lon, lat) 좌표. pose의 (lon, lat)을 기준으로 미터 단위 오프셋을 도 단위로 변환하여 더한다."""
     return [
-        metadata.gps_longitude + east_m / metadata.m_per_deg_lon,
-        metadata.gps_latitude + north_m / M_PER_DEG_LAT,
+        metadata.gps.lng + east_m / metadata.m_per_deg_lon,
+        metadata.gps.lat + north_m / M_PER_DEG_LAT,
     ]
 
 # --------------------------------------------------------------------------- #
@@ -244,7 +245,7 @@ def convert_ir_yolo_to_geo(
         detection = correct_yolo_for_stretch(detection, label_scale)
  
     metadata = georeferencer.metadata
-    W, H = metadata.image_width, metadata.image_height
+    W, H = metadata.width, metadata.height
  
     pixel_bbox = detection.to_pixel_xyxy(W, H)
     pixel_corners = detection.to_pixel_corners(W, H)
@@ -311,20 +312,31 @@ def convert_ir_yolo_to_geo(
  
 def extract_rgb_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMetadata:
     print_section("1. EXIF + XMP 메타데이터 추출 (Georeferencer 준비)")
-    metadata = extract_dji_metadata(image_path)
+    #metadata = extract_dji_metadata(image_path)
+    metadata = extract_metadata(image_path)
+
+    # 짐벌 자세 → 카메라 회전 행렬 (위임)
+    axes = compute_camera_axes_from_gimbal(
+        gimbal_yaw_compass_deg=metadata.gimbal_yaw_deg,
+        gimbal_pitch_deg=metadata.gimbal_pitch_deg,
+        gimbal_roll_deg=metadata.gimbal_roll_deg,
+    )
+    R = axes['R_camera_to_enu']
+    metadata.R_cam_to_enu=R
+
     print()
     print(f"  이미지: {Path(image_path).name}")
-    print(f"  크기: {metadata.image_width} × {metadata.image_height}")
+    print(f"  크기: {metadata.width} × {metadata.height}")
     print(f"  촬영 시각: {metadata.capture_time}")
-    print(f"  카메라: ZH20T (focal {metadata.focal_length_mm:.2f}mm, 35mm 환산 {metadata.focal_length_35mm}mm)")
-    print(f"  드론 자세: yaw={metadata.flight_yaw_deg:.2f}°, pitch={metadata.flight_pitch_deg:.2f}°, roll={metadata.flight_roll_deg:.2f}°")
+    print(f"  카메라: ZH20T (focal {metadata.focal_length:.2f}mm, 35mm 환산 {metadata.focal_length_in_35mm}mm)")
+    print(f"  드론 자세: yaw={metadata.flight[0]:.2f}°, pitch={metadata.flight[1]:.2f}°, roll={metadata.flight[2]:.2f}°")
     print(f"  짐벌 자세: yaw={metadata.gimbal_yaw_deg:.2f}°, pitch={metadata.gimbal_pitch_deg:.2f}°, roll={metadata.gimbal_roll_deg:.2f}°")
-    print(f"  GPS: ({metadata.gps_latitude:.7f}, {metadata.gps_longitude:.7f})")
-    print(f"  고도: 절대 {metadata.absolute_altitude:.2f}m / 상대 {metadata.relative_altitude:.2f}m")
+    print(f"  GPS: ({metadata.gps.lat:.7f}, {metadata.gps.lng:.7f})")
+    print(f"  고도: 절대 {metadata.gps.altitude:.2f}m / 상대 {metadata.relative_height:.2f}m")
     if metadata.rtk_flag and metadata.rtk_flag >= 50:
         print(f"  RTK-GPS 활성: (정확도 매우 높음)")
-    if metadata.lrf_distance:
-        print(f"  LRF 측정: 거리 {metadata.lrf_distance:.2f}m, 타깃 고도 {metadata.lrf_target_abs_alt:.2f}m")
+    if metadata.lrf_target_distance:
+        print(f"  LRF 측정: 거리 {metadata.lrf_target_distance:.2f}m, 타깃 고도 {metadata.lrf_target_abs_alt:.2f}m")
 
     print_section("2. 카메라 내부 파라미터 추정")
     K, D = estimate_intrinsics_from_metadata(metadata)
@@ -358,7 +370,7 @@ def extract_rgb_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMe
     extracted_bboxes = []
     for i, det in enumerate(detections):
         cls_name = SOLAR_RGB_CLASSES.get(det.class_id, f"class_{det.class_id}")
-        x1, y1, x2, y2 = det.to_pixel_xyxy(metadata.image_width, metadata.image_height)
+        x1, y1, x2, y2 = det.to_pixel_xyxy(metadata.width, metadata.height)
         print(f"  {i:<3} {cls_name:<20} ({x1:.0f}, {y1:.0f}, {x2:.0f}, {y2:.0f})")
         extracted_bboxes.append((f"({cls_name} ({x1:.0f}, {y1:.0f}, {x2:.0f}, {y2:.0f})", int(x1), int(y1), int(x2), int(y2)))
 
@@ -375,14 +387,14 @@ def extract_rgb_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMe
         print(f"  {label}: lat={corner.latitude:.7f}, lon={corner.longitude:.7f}")
 
     print_section("6. 이미지 중심 = 드론 바로 아래?")
-    cx = metadata.image_width // 2
-    cy = metadata.image_height // 2
+    cx = metadata.width // 2
+    cy = metadata.height // 2
     center_geo = gr.pixel_to_geodetic((cx, cy))
     print(f"  이미지 중심 픽셀: ({cx}, {cy})")
     print(f"  계산된 지리 좌표: ({center_geo.latitude:.7f}, {center_geo.longitude:.7f})")
-    print(f"  드론 GPS:        ({metadata.gps_latitude:.7f}, {metadata.gps_longitude:.7f})")
+    print(f"  드론 GPS:        ({metadata.gps.lat:.7f}, {metadata.gps.lng:.7f})")
 
-    drone_pos = GeodeticPoint(metadata.gps_latitude, metadata.gps_longitude, gr.ground_altitude)
+    drone_pos = GeodeticPoint(metadata.gps.lat, metadata.gps.lng, gr.ground_altitude)
     center_enu = geodetic_to_enu(center_geo, drone_pos).to_array()
     horizontal_offset = np.linalg.norm(center_enu[:2])
     print(f"  수평 오프셋: {horizontal_offset:.3f}m")
@@ -406,13 +418,6 @@ def extract_rgb_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMe
     print(f"  → 한 셀(156mm)이 약 {156 / (result.ground_sample_distance_m * 1000):.1f} 픽셀")
 
     print_section("9. 검출 박스 georeferencing 예시")
-    example_bboxes = [
-        ("우측 패널 영역 (x=4500, y=300, w=400, h=1200)", 4500, 300, 400, 1200),
-        ("좌측 돌무더기 (x=350, y=150, w=550, h=600)", 350, 150, 550, 600),
-        ("이미지 중앙 (x=2392, y=1344, w=400, h=400)", 2392, 1344, 400, 400),
-    ]
-
-    #extracted_bboxes = example_bboxes
 
     for name, x, y, w, h in extracted_bboxes:
         bbox = (x, y, x + w, y + h)
@@ -427,7 +432,8 @@ def extract_rgb_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMe
     print_section("10. GeoJSON 출력")
     output_dir = Path(output_path)
     output_dir.mkdir(exist_ok=True)
-    geojson_path = output_dir / "rgb_georeferenced.geojson"
+    #geojson_path = output_dir / "rgb_georeferenced.geojson"
+    geojson_path = output_dir / f"{Path(image_path).stem}.geojson"
 
     features = []
 
@@ -435,23 +441,9 @@ def extract_rgb_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMe
     nadir_check = verify_nadir_orientation(metadata.R_cam_to_enu, tolerance_deg=10.0)
     is_oblique = not nadir_check['is_nadir']
 
-    """
-    coverage_coords = [[c.longitude, c.latitude] for c in corners]
-    coverage_coords.append([corners[0].longitude, corners[0].latitude])
-    features.append({
-        "type": "Feature",
-        "geometry": {"type": "Polygon", "coordinates": [coverage_coords]},
-        "properties": {
-            "name": "image_coverage",
-            "image_path": metadata.image_path,
-            'camera_model': metadata.camera_model,
-            
-        }
-    })
-    """
     # (a) image footprint
     footprint_ring = pixel_bbox_to_polygon(
-        (0, 0, metadata.image_width, metadata.image_height), metadata,
+        (0, 0, metadata.width, metadata.height), metadata,
     )
 
     features.append({
@@ -459,12 +451,12 @@ def extract_rgb_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMe
         "geometry": {"type": "Polygon", "coordinates": [footprint_ring]},
         "properties": {
             "name": "image_coverage",
-            "image_path": metadata.image_path,
+            "image_path": metadata.origin_path,
             "camera_model": metadata.camera_model,
-            "focal_35mm_eq": metadata.focal_length_35mm,
+            "focal_35mm_eq": metadata.focal_length_in_35mm,
             "hfov_deg": round(metadata.hfov_deg, 2),
             "vfov_deg": round(metadata.vfov_deg, 2),
-            "rel_alt_m": metadata.relative_altitude,
+            "rel_alt_m": metadata.relative_height,
             "gimbal_pitch_deg": metadata.gimbal_pitch_deg,
             "gimbal_yaw_compass_deg": metadata.gimbal_yaw_deg,
             "gimbal_roll_deg": metadata.gimbal_roll_deg,
@@ -473,49 +465,23 @@ def extract_rgb_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMe
         }
     })
 
-    """
     features.append({
         "type": "Feature",
         "geometry": {
             "type": "Point",
-            "coordinates": [metadata.gps_longitude, metadata.gps_latitude]
+            "coordinates": [metadata.gps.lng, metadata.gps.lat]
         },
         "properties": {
             "name": "drone_position",
-            "altitude": metadata.absolute_altitude,
-            "gimbal_pitch": metadata.gimbal_pitch_deg,
-        }
-    })
-    """
-    features.append({
-        "type": "Feature",
-        "geometry": {
-            "type": "Point",
-            "coordinates": [metadata.gps_longitude, metadata.gps_latitude]
-        },
-        "properties": {
-            "name": "drone_position",
-            "rel_altitude_m": metadata.relative_altitude,
-            "abs_altitude_m": metadata.absolute_altitude,
+            "rel_altitude_m": metadata.relative_height,
+            "abs_altitude_m": metadata.gps.altitude,
             "rtk_active": metadata.rtk_active,
         }
     })
 
-    """
-    for name, x, y, w, h in extracted_bboxes:
-        bbox_corners = gr.bbox_to_geodetic((x, y, x + w, y + h))
-        if bbox_corners:
-            poly = [[c.longitude, c.latitude] for c in bbox_corners]
-            poly.append([bbox_corners[0].longitude, bbox_corners[0].latitude])
-            features.append({
-                "type": "Feature",
-                "geometry": {"type": "Polygon", "coordinates": [poly]},
-                "properties": {"name": name, "type": "detection_box"}
-            })
-    """
     for i, det in enumerate(detections):
         cls_name = SOLAR_RGB_CLASSES.get(det.class_id, f"class_{det.class_id}")
-        x1, y1, x2, y2 = det.to_pixel_xyxy(metadata.image_width, metadata.image_height)
+        x1, y1, x2, y2 = det.to_pixel_xyxy(metadata.width, metadata.height)
         ring = pixel_bbox_to_polygon((x1, y1, x2, y2), metadata)
         print(ring)
 
@@ -543,9 +509,6 @@ def extract_rgb_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMe
 
         features.append(feature)
 
-    """
-    geojson = {"type": "FeatureCollection", "features": features}
-    """
     geojson = {
         "type": "FeatureCollection", 
         "features": features,
@@ -553,8 +516,8 @@ def extract_rgb_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMe
             "image_path": image_path,
             "modality": "rgb",
             "camera": f"ZH20T_{metadata.camera_model.capitalize()}",
-            "image_native_size": [metadata.image_width, metadata.image_height],
-            "focal_35mm_eq": metadata.focal_length_35mm,
+            "image_native_size": [metadata.width, metadata.height],
+            "focal_35mm_eq": metadata.focal_length_in_35mm,
             "hfov_deg": round(metadata.hfov_deg, 4),
             "vfov_deg": round(metadata.vfov_deg, 4),
             "capture_time": metadata.capture_time,
@@ -574,28 +537,64 @@ def extract_rgb_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMe
 
     return metadata
 
+def _to_pixel(image_width: int, image_height: int) -> Tuple[float, float, float, float]:
+    """정규화 (cx, cy, w, h) → 픽셀 (x1, y1, x2, y2)"""
+    cx = 0.5 * image_width
+    cy = 0.5 * image_height
+    w = 1.0 * image_width
+    h = 1.0 * image_height
+    
+    x1 = cx - w / 2
+    y1 = cy - h / 2
+    x2 = cx + w / 2
+    y2 = cy + h / 2
+    
+    x1 = max(0, x1)
+    y1 = max(0, y1)
+    x2 = min(image_width, x2)
+    y2 = min(image_height, y2)
+    
+    return (x1, y1, x2, y2)
 
-def extract_ir_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMetadata:
+def _to_pixel_corners(image_width: int, image_height: int) -> List[Tuple[float, float]]:
+    """4개 모서리 픽셀 좌표 (좌상→우상→우하→좌하)"""
+    x1, y1, x2, y2 = _to_pixel(image_width, image_height)
+    return [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
+
+def extract_ir_geo(image_path: str, yolo_label: str, output_path: str) -> ImageMetadata:
     print_section("1. IR 이미지 메타데이터 추출")
-    metadata = extract_dji_metadata(image_path)
+    #metadata = extract_dji_metadata(image_path)
+    metadata = extract_metadata(image_path)
+
+    # 짐벌 자세 → 카메라 회전 행렬 (위임)
+    axes = compute_camera_axes_from_gimbal(
+        gimbal_yaw_compass_deg=metadata.gimbal_yaw_deg,
+        gimbal_pitch_deg=metadata.gimbal_pitch_deg,
+        gimbal_roll_deg=metadata.gimbal_roll_deg,
+    )
+    R = axes['R_camera_to_enu']
+    metadata.R_cam_to_enu=R
+
+    lrf_distance, lrf_lat, lrf_lon, lrf_abs_alt = metadata.lrf
+
     print(f"  파일: {Path(image_path).name}")
-    print(f"  네이티브 크기: {metadata.image_width} × {metadata.image_height}")
-    print(f"  카메라: ZH20T Thermal (35mm 환산 {metadata.focal_length_35mm}mm)")
-    print(f"  GPS: ({metadata.gps_latitude:.7f}, {metadata.gps_longitude:.7f})")
-    print(f"  짐벌 자세: yaw={metadata.gimbal_yaw_deg}°, pitch={metadata.gimbal_pitch_deg}°")
+    print(f"  네이티브 크기: {metadata.width} × {metadata.height}")
+    print(f"  카메라: ZH20T Thermal (35mm 환산 {metadata.focal_length_in_35mm}mm)")
+    print(f"  GPS: ({metadata.gps.lat:.7f}, {metadata.gps.lng:.7f})")
+    print(f"  짐벌 자세: yaw={metadata.gimbal_yaw_deg:.2f}°, pitch={metadata.gimbal_pitch_deg:.2f}°, roll={metadata.gimbal_roll_deg:.2f}°")
     print(f"  RTK: {metadata.rtk_flag and metadata.rtk_flag >= 50}")
-    print(f"  LRF 거리: {metadata.lrf_distance:.2f}m")
-    print(f"  지면 고도: {metadata.lrf_target_abs_alt:.2f}m")
+    print(f"  LRF 거리: {lrf_distance:.2f}m")
+    print(f"  지면 고도: {lrf_abs_alt:.2f}m")
  
     print_section("2. 라벨 좌표계 분석")
     print(f"  라벨 정규화 기준: 640 × 640 (Roboflow stretch)")
-    print(f"  원본 IR 이미지:   {metadata.image_width} × {metadata.image_height} (native)")
+    print(f"  원본 IR 이미지:   {metadata.width} × {metadata.height} (native)")
  
     label_scale = LabelImageScale(
         label_ref_width=640,
         label_ref_height=640,
-        actual_width=metadata.image_width,
-        actual_height=metadata.image_height,
+        actual_width=metadata.width,
+        actual_height=metadata.height,
     )
     print(f"  스케일 보정 필요: {label_scale.needs_correction}")
     print(f"  Y 압축 비율: {label_scale.actual_height / label_scale.label_ref_height:.4f}")
@@ -632,9 +631,60 @@ def extract_ir_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMet
     print(f"  GSD: {gr.compute_ground_sample_distance() * 1000:.2f} mm/pixel")
     print(f"  커버리지: {gr.compute_coverage_area():.1f} m²")
 
+    # nadir 검증 (경고만, 차단은 안 함)
+    nadir_check = verify_nadir_orientation(metadata.R_cam_to_enu, tolerance_deg=10.0)
+    is_oblique = not nadir_check['is_nadir']
+
+    # (a) image footprint
+    pixel_corners = _to_pixel_corners(metadata.width, metadata.height)
+
+    geo_corners = []
+    for px in pixel_corners:
+        geo = gr.pixel_to_geodetic(px)
+        if geo is None:
+            return None
+        geo_corners.append([geo.longitude, geo.latitude])
+    geo_corners.append(geo_corners[0])
+
+    cover_detection = {
+        "type": "Feature",
+        "geometry": {
+            "type": "Polygon", 
+            "coordinates": [geo_corners]
+        },
+        "properties": {
+            "name": "image_coverage",
+            "image_path": metadata.origin_path,
+            "camera_model": metadata.camera_model,
+            "focal_35mm_eq": metadata.focal_length_in_35mm,
+            "hfov_deg": round(metadata.hfov_deg, 2),
+            "vfov_deg": round(metadata.vfov_deg, 2),
+            "rel_alt_m": metadata.relative_height,
+            "gimbal_pitch_deg": metadata.gimbal_pitch_deg,
+            "gimbal_yaw_compass_deg": metadata.gimbal_yaw_deg,
+            "gimbal_roll_deg": metadata.gimbal_roll_deg,
+            "oblique_view": is_oblique,
+            "angle_from_nadir_deg": round(nadir_check["angle_from_nadir_deg"], 2),
+        }
+    }
+
+    drone_position = {
+        "type": "Feature",
+        "geometry": {
+            "type": "Point",
+            "coordinates": [metadata.gps.lng, metadata.gps.lat]
+        },
+        "properties": {
+            "name": "drone_position",
+            "rel_altitude_m": metadata.relative_height,
+            "abs_altitude_m": metadata.gps.altitude,
+            "rtk_active": metadata.rtk_active,
+        }
+    }
 
     print_section("5. IR YOLO → Georeferenced 변환")
     geo_detections = []
+    
     for i, det in enumerate(detections):
         geo_det = convert_ir_yolo_to_geo(
             det,
@@ -673,10 +723,12 @@ def extract_ir_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMet
     output_dir = Path(output_path)
     output_dir.mkdir(exist_ok=True)
  
-    geojson_path = output_dir / "ir_yolo_georeferenced.geojson"
+    geojson_path = output_dir / f"{Path(image_path).stem}.geojson"
     csv_path = output_dir / "ir_yolo_georeferenced.csv"
  
     export_to_geojson(
+        cover_detection,
+        drone_position,
         geo_detections,
         str(geojson_path),
         image_metadata={
@@ -684,7 +736,7 @@ def extract_ir_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMet
             "modality": "infrared",
             "camera": "ZH20T_Thermal",
             "label_source_size": [label_scale.label_ref_width, label_scale.label_ref_height],
-            "image_native_size": [metadata.image_width, metadata.image_height],
+            "image_native_size": [metadata.width, metadata.height],
             "stretch_correction_applied": label_scale.needs_correction,
             "capture_time": metadata.capture_time,
             "rtk_active": metadata.rtk_flag and metadata.rtk_flag >= 50,
@@ -698,6 +750,10 @@ def extract_ir_geo(image_path: str, yolo_label: str, output_path: str) -> DJIMet
     return metadata
 
 def main():
+    rgb_image_dir = Path("data/solar/images/RGB")
+    rgb_label_dir = Path("workspace/labels_s200_l_2_d")
+    ir_image_dir = Path("data/solar/images/TM")
+    ir_label_dir = Path("workspace/ir_rf")
     rgb_path = "data/solar/images/RGB/DJI_20251217130217_0007_Z.JPG"
     ir_path = "data/solar/images/TM/DJI_20251217130217_0007_T.JPG"
     rgb_yolo_label = "workspace/labels_s100_m_d/DJI_20251217130217_0007_Z.txt"
@@ -706,10 +762,27 @@ def main():
     image_path = rgb_path
     yolo_label = rgb_yolo_label
 
-    rgb_metadata = extract_rgb_geo(image_path = rgb_path, yolo_label = rgb_yolo_label, output_path = output_path)
-    #print(rgb_metadata, type(rgb_metadata))
-    ir_metadata = extract_ir_geo(image_path = ir_path, yolo_label = ir_yolo_label, output_path = output_path)
-    #print(ir_metadata, type(ir_metadata))
+    # RGB Georeferencing 추출
+    rgb_images = sorted(rgb_image_dir.glob("*.JPG"))
+
+    for p in rgb_images:
+        label_filename = p.stem + ".txt"
+        print(label_filename)
+        rgb_labels = sorted(rgb_label_dir.glob(label_filename))
+        if len(rgb_labels) >= 1:
+            extract_rgb_geo(image_path = str(p), yolo_label = str(rgb_labels[0]), output_path = output_path)
+
+    # IR Georeferencing 추출
+    ir_images = sorted(ir_image_dir.glob("*.JPG"))
+
+    for p in ir_images:
+        label_filename = p.stem + "*.txt"
+        ir_labels = sorted(ir_label_dir.glob(label_filename))
+        if len(ir_labels) >= 1:
+            extract_ir_geo(image_path = str(p), yolo_label = str(ir_labels[0]), output_path = output_path)
+
+    #rgb_metadata = extract_rgb_geo(image_path = rgb_path, yolo_label = rgb_yolo_label, output_path = output_path)
+    #ir_metadata = extract_ir_geo(image_path = ir_path, yolo_label = ir_yolo_label, output_path = output_path)
 
 if __name__ == "__main__":
     main()

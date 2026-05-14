@@ -56,6 +56,10 @@ class DJIMetadata:
     # 캐시: 카메라 → ENU 회전 행렬
     R_cam_to_enu: np.ndarray = field(default=None) #, repr=False
 
+    # GPS/RTK 측정 표준편차 (XMP에 포함될 경우)
+    gps_std_xy: float = 0.10   # 기본 10cm
+    gps_std_z: float = 0.15    # 기본 15cm
+
     # ----- 동적 FOV -----
     @property
     def hfov_deg(self) -> float:

@@ -4,16 +4,24 @@ DJI 이미지 georeferencing 메인 클래스
 """
 
 from dataclasses import dataclass, field, asdict
+from pathlib import Path
 from typing import Optional, List, Tuple
 
 import numpy as np
+import sys
+
+# 프로젝트를 editable 설치하지 않았을 때를 위해 src 경로 추가
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+from solar_thermal.image.metadata import ImageMetadata, extract_metadata, estimate_intrinsics_from_metadata
 
 from .metadata import (
-    DJIMetadata,
+    #DJIMetadata,
     CameraIntrinsics,
     parse_dji_metadata,
     estimate_zh20t_zoom_intrinsics,
-    estimate_intrinsics_from_metadata,
+    #estimate_intrinsics_from_metadata,
     dji_gimbal_to_camera_rotation, estimate_zh20t_thermal_intrinsics
 )
 from .coordinates import (
@@ -49,7 +57,7 @@ class DJIImageGeoreferencer:
  
     def __init__(
         self,
-        metadata: DJIMetadata,
+        metadata: ImageMetadata,
         K: Optional[np.ndarray] = None,
         D: Optional[np.ndarray] = None,
         ground_altitude: Optional[float] = None,
@@ -62,26 +70,26 @@ class DJIImageGeoreferencer:
             self.K, self.D = K, D
  
         self.origin = GeodeticPoint(
-            latitude=metadata.gps_latitude,
-            longitude=metadata.gps_longitude,
-            altitude=metadata.absolute_altitude
+            latitude=metadata.gps.lat,
+            longitude=metadata.gps.lng,
+            altitude=metadata.gps.altitude
         )
  
         self.camera_position_enu = np.array([0.0, 0.0, 0.0])
  
         if ground_altitude is not None:
             self.ground_altitude = ground_altitude
-        elif metadata.lrf_target_abs_alt is not None:
-            self.ground_altitude = metadata.lrf_target_abs_alt
+        elif metadata.lrf[3] is not None:
+            self.ground_altitude = metadata.lrf[3]
         else:
-            self.ground_altitude = metadata.absolute_altitude - metadata.relative_altitude
+            self.ground_altitude = metadata.gps.altitude - metadata.relative_height
  
-        self.ground_up_in_enu = self.ground_altitude - metadata.absolute_altitude
+        self.ground_up_in_enu = self.ground_altitude - metadata.gps.altitude
  
         axes = compute_camera_axes_from_gimbal(
-            gimbal_yaw_compass_deg=metadata.gimbal_yaw_deg,
-            gimbal_pitch_deg=metadata.gimbal_pitch_deg,
-            gimbal_roll_deg=metadata.gimbal_roll_deg
+            gimbal_yaw_compass_deg=metadata.orientation[0],
+            gimbal_pitch_deg=metadata.orientation[1],
+            gimbal_roll_deg=metadata.orientation[2]
         )
         self.R_camera_to_enu = axes["R_camera_to_enu"]
         self.optical_axis_enu = axes["axis_z_enu"]
@@ -175,8 +183,8 @@ class DJIImageGeoreferencer:
         if "corners" in self._cache:
             return self._cache["corners"]
  
-        w = self.metadata.image_width
-        h = self.metadata.image_height
+        w = self.metadata.width
+        h = self.metadata.height
         corners_pixel = [(0, 0), (w - 1, 0), (w - 1, h - 1), (0, h - 1)]
  
         result = []
@@ -191,8 +199,8 @@ class DJIImageGeoreferencer:
  
     def compute_ground_sample_distance(self) -> float:
         """이미지 중심에서 1픽셀이 지상에서 차지하는 거리 (m)"""
-        cx = self.metadata.image_width // 2
-        cy = self.metadata.image_height // 2
+        cx = self.metadata.width // 2
+        cy = self.metadata.height // 2
  
         p1 = self.pixel_to_enu((cx, cy))
         p2 = self.pixel_to_enu((cx + 1, cy))
@@ -241,20 +249,20 @@ class DJIImageGeoreferencer:
         DJI XMP의 LRFTarget* 필드는 이미지 중심에서 측정한 실제 거리/위치.
         이 값과 우리 계산이 일치하면 georeferencing이 정확한 것.
         """
-        if self.metadata.lrf_target_lat is None:
+        if self.metadata.lrf[1] is None:
             return None
  
-        cx = self.metadata.image_width // 2
-        cy = self.metadata.image_height // 2
+        cx = self.metadata.width // 2
+        cy = self.metadata.height // 2
         computed_geo = self.pixel_to_geodetic((cx, cy))
  
         if computed_geo is None:
             return {"status": "computation_failed"}
  
         lrf_geo = GeodeticPoint(
-            latitude=self.metadata.lrf_target_lat,
-            longitude=self.metadata.lrf_target_lon,
-            altitude=self.metadata.lrf_target_abs_alt or 0.0
+            latitude=self.metadata.lrf[1],
+            longitude=self.metadata.lrf[2],
+            altitude=self.metadata.lrf[3] or 0.0
         )
  
         computed_enu = geodetic_to_enu(computed_geo, self.origin).to_array()
@@ -262,6 +270,7 @@ class DJIImageGeoreferencer:
  
         error_horizontal_m = np.linalg.norm(computed_enu[:2] - lrf_enu[:2])
  
+        lrf_distance, lrf_lat, lrf_lon, lrf_abs_alt = self.metadata.lrf
         return {
             "status": "ok",
             "computed": {
@@ -273,7 +282,7 @@ class DJIImageGeoreferencer:
                 "lon": lrf_geo.longitude,
             },
             "error_horizontal_m": float(error_horizontal_m),
-            "lrf_distance_m": self.metadata.lrf_distance,
+            "lrf_distance_m": lrf_distance,
         }
 
  
@@ -282,7 +291,7 @@ class DJIGeoreferencer:
     
     def __init__(
         self,
-        metadata: DJIMetadata,
+        metadata: ImageMetadata,
         intrinsics: CameraIntrinsics,
         ground_height_below_drone_m: Optional[float] = None,
     ):

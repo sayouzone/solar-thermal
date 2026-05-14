@@ -105,7 +105,7 @@ def main() -> None:
     ap.add_argument("--visual-dir",     type=Path, default=Path("workspace/visualized"))
     ap.add_argument("--strategy",     default="heuristic",
                     choices=["heuristic", "sam2", "yolo_world", "finetuned"])
-    ap.add_argument("--classes",      nargs="+", default=["pv_string", "pv_module", "other", "defect"])
+    ap.add_argument("--classes",      nargs="+", default=["pv_string", "pv_module", "other", "anomaly"])
     ap.add_argument("--steps",        nargs="+",
                     choices=["auto_label", "verify", "report", "visualize", "split", "train", "inference", "all"],
                     default=["auto_label", "verify", "report", "visualize", "split"],)
