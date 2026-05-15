@@ -24,7 +24,9 @@ GCP-free의 한계:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path
 from itertools import combinations
 
@@ -1291,6 +1293,9 @@ def run_pipeline_rgb_ir(rgb_dir: Path,
 
 
 if __name__ == "__main__":
+    # 시작 시간
+    start = time.perf_counter()
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     # --- RGB 단독 파이프라인 ---
@@ -1309,7 +1314,7 @@ if __name__ == "__main__":
     )
     run_pipeline_rgb_ir(
         rgb_dir=Path("./data/solar/images/RGB"),
-        ir_dir=Path("./data/solar/images/IR"),
+        ir_dir=Path("./data/solar/images/TM"),
         output_dir=Path("./workspace/output_rgb_ir"),
         rig=h20t_rig,
         target_epsg=5186,
@@ -1317,3 +1322,7 @@ if __name__ == "__main__":
         k_neighbors=8,
         optimize_rig=False,   # 관측성 한계 — 공장값 고정 권장
     )
+
+    # 경과 시간
+    elapsed = time.perf_counter() - start
+    print(f"Elapsed: {timedelta(seconds=int(elapsed))}")

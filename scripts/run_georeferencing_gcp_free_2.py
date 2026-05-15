@@ -24,7 +24,9 @@ GCP-free의 한계:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path
 from itertools import combinations
 
@@ -63,6 +65,8 @@ RTK_FIXED = 50
 # ---------------------------------------------------------------------------
 # 2. 좌표계 변환
 # ---------------------------------------------------------------------------
+# 좌표계 정의 (CRS): EPSG:4326 또는 EPSG:32652
+# EPSG:4326 → EPSG:5186
 class CRSConverter:
     def __init__(self, target_epsg: int = 5186):
         self.to_proj = Transformer.from_crs("EPSG:4326", f"EPSG:{target_epsg}", always_xy=True)
@@ -811,6 +815,9 @@ def run_pipeline_gcp_free(image_dir: Path,
 
 
 if __name__ == "__main__":
+    # 시작 시간
+    start = time.perf_counter()
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     run_pipeline_gcp_free(
         image_dir=Path("./data/solar/images/RGB"),
@@ -819,3 +826,7 @@ if __name__ == "__main__":
         gsd_m=0.05,         # 5cm/pixel (DJI Mavic 3E 100m 고도 기준 적절)
         k_neighbors=8,
     )
+
+    # 경과 시간
+    elapsed = time.perf_counter() - start
+    print(f"Elapsed: {timedelta(seconds=int(elapsed))}")
