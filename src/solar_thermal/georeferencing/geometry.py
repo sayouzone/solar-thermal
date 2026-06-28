@@ -33,14 +33,14 @@ import numpy as np
 # 회전행렬 — 단일/배치/CuPy
 # ---------------------------------------------------------------------------
 def rotation_matrix(omega: float, phi: float, kappa: float) -> np.ndarray:
-    """단일 (ω, φ, κ) → 3×3 회전행렬 (radian 입력)."""
+    """사진측량 ω-φ-κ 회전행렬 (radian)."""
     co, so = np.cos(omega), np.sin(omega)
-    cp_, sp = np.cos(phi), np.sin(phi)
+    cp, sp = np.cos(phi), np.sin(phi)
     ck, sk = np.cos(kappa), np.sin(kappa)
     return np.array([
-        [cp_ * ck,                  -cp_ * sk,                  sp],
-        [co * sk + so * sp * ck,    co * ck - so * sp * sk,    -so * cp_],
-        [so * sk - co * sp * ck,    so * ck + co * sp * sk,     co * cp_],
+        [cp * ck,                  -cp * sk,                 sp],
+        [co * sk + so * sp * ck,    co * ck - so * sp * sk,  -so * cp],
+        [so * sk - co * sp * ck,    so * ck + co * sp * sk,   co * cp],
     ])
 
 
@@ -142,17 +142,31 @@ def camera_projection_matrix(camera_xyz: np.ndarray,
     return K_neg @ Rt
 
 
-def compute_focal_px(focal_length_in_35mm: float,
-                     focal_length_mm: float,
-                     width_px: int) -> float:
-    """픽셀 단위 초점거리 계산.
+def compute_focal_px(meta: ImageMetadata) -> float:
+    """픽셀 단위 초점거리. FocalLengthIn35mmFilm 우선 (센서크기 불필요).
 
-    ``FocalLengthIn35mmFilm`` 값이 있으면 우선 사용 (센서폭 가정 불필요).
-    없으면 센서폭 13.2mm (1″ 센서) 를 가정하여 fallback.
+    Returns
+    -------
+    f_px : 픽셀 단위 초점거리. **두 EXIF 필드 모두 0/없음이면 0.0 반환**
+        (호출자가 0 체크로 그 사진을 제외해야 함). 0 을 그대로 사용하면
+        ``simple_orthophoto`` 의 ``-(px-cx)/f_px`` 에서 0 으로 나눠 NaN 이
+        발생하고 ``int(np.ceil(NaN))`` 에서 ``ValueError: cannot convert
+        float NaN to integer`` 로 크래시한다.
+
+    노트
+    ----
+    DJI H20T 의 thermal (Z) 채널 EXIF 는 ``FocalLengthIn35mmFilm`` 과
+    ``FocalLength`` 가 모두 비어있는 경우가 있다. RGB 디렉토리만 처리하려는
+    의도였다면 thermal 파일이 섞이지 않았는지 확인 (``_Z.JPG``, ``_T.JPG``
+    제외 등).
     """
-    if focal_length_in_35mm and focal_length_in_35mm > 0:
-        return focal_length_in_35mm / 36.0 * width_px
-    return focal_length_mm * width_px / 13.2
+    if meta.focal_length_in_35mm and meta.focal_length_in_35mm > 0:
+        return meta.focal_length_in_35mm / 36.0 * meta.width
+    if meta.focal_length and meta.focal_length > 0:
+        # FocalLengthIn35mmFilm 이 없을 때만 센서폭 13.2mm (1″ 센서) 가정 fallback.
+        return meta.focal_length * meta.width / 13.2
+    # 두 정보 모두 없음 — 0 반환. 호출자가 필터링해야 함.
+    return 0.0
 
 
 __all__ = [

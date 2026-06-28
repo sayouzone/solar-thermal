@@ -35,8 +35,10 @@ import numpy as np
 from scipy.optimize import least_squares
 from scipy.sparse import csr_matrix, lil_matrix
 
-from ..geometry import rotation_matrices_batch_cp, rotation_matrices_batch_np
+from ..geometry import project_point, rotation_matrix, rotation_matrices_batch_cp, rotation_matrices_batch_np
 from ..gpu_backend import HAS_CUPY, cp, free_gpu_memory
+
+from ..utils import fmt_elapsed
 
 logger = logging.getLogger(__name__)
 
@@ -155,81 +157,73 @@ def _build_jacobian_sparsity(n_cam: int, n_pts: int,
 # Top-level API
 # ---------------------------------------------------------------------------
 def rtk_constrained_bundle_adjustment(
-    initial_cameras: np.ndarray,
-    initial_points: np.ndarray,
+    initial_cameras: np.ndarray,        # (n_cam, 6) [Xc,Yc,Zc, ω,φ,κ]
+    initial_points: np.ndarray,         # (n_pts, 3)
     observations: list[tuple[int, int, np.ndarray]],
-    rtk_priors: np.ndarray,
-    rtk_weights: np.ndarray,
+    rtk_priors: np.ndarray,             # (n_cam, 3) RTK 측정 카메라 위치
+    rtk_weights: np.ndarray,            # (n_cam, 3) 1/σ² 가중치
     f_px: float, cx: float, cy: float,
 ):
-    """RTK prior 가중을 포함한 번들 조정.
+    """RTK 좌표를 카메라 위치의 사전확률(prior)로 묶는 번들 조정.
 
-    Parameters
-    ----------
-    initial_cameras : (n_cam, 6) ``[Xc, Yc, Zc, ω, φ, κ]``
-    initial_points : (n_pts, 3)
-    observations : ``[(cam_idx, point_idx, uv), ...]``
-    rtk_priors : (n_cam, 3) RTK 측정 카메라 위치
-    rtk_weights : (n_cam, 3) 1/σ² 가중치
-    f_px, cx, cy : 대표 내부 파라미터 (모든 카메라 공통 가정)
+    핵심 아이디어:
+        GCP가 없으므로 절대 좌표계 기준점은 RTK 측정값.
+        하지만 RTK도 cm급 오차가 있으므로 hard constraint가 아닌
+        soft constraint (가중치 = 1/σ²) 로 잔차에 추가.
 
-    Returns
-    -------
-    cams_opt : (n_cam, 6)
-    pts_opt : (n_pts, 3)
-    rmse_px : 픽셀 단위 reprojection RMSE
+        residual = [reprojection_errors, sqrt(w) * (camera_pos - rtk_prior)]
+
+    이렇게 하면:
+        - reprojection error는 일관된 internal geometry를 보장
+        - RTK prior는 절대 georeferencing을 보장
+        - 둘이 가중 평균되어 outlier에 강건한 해를 찾음
     """
     n_cam = len(initial_cameras)
     n_pts = len(initial_points)
-    M = len(observations)
 
-    # 관측을 배열로 평탄화.
-    obs_cam_idx = np.empty(M, dtype=np.int64)
-    obs_pt_idx = np.empty(M, dtype=np.int64)
-    obs_uv = np.empty((M, 2), dtype=np.float64)
-    for k, (ci, pi, uv) in enumerate(observations):
-        obs_cam_idx[k] = ci
-        obs_pt_idx[k] = pi
-        obs_uv[k] = uv
+    def pack(cams, pts):
+        return np.concatenate([cams.ravel(), pts.ravel()])
 
-    rtk_w_sqrt = np.sqrt(rtk_weights)
+    def unpack(x):
+        cams = x[: n_cam * 6].reshape(n_cam, 6)
+        pts = x[n_cam * 6:].reshape(n_pts, 3)
+        return cams, pts
 
-    use_gpu = HAS_CUPY and M >= _GPU_MIN_OBS
-    backend = "GPU(CuPy)" if use_gpu else "CPU(numpy 벡터화)"
-    logger.info("BA backend: %s (관측 %d개, 카메라 %d, 점 %d)",
-                backend, M, n_cam, n_pts)
+    def residuals(x):
+        cams, pts = unpack(x)
+        res = []
 
-    if use_gpu:
-        residuals = _build_residuals_gpu(
-            n_cam, n_pts, obs_cam_idx, obs_pt_idx, obs_uv,
-            rtk_priors, rtk_w_sqrt, f_px, cx, cy,
-        )
-    else:
-        residuals = _build_residuals_np(
-            n_cam, n_pts, obs_cam_idx, obs_pt_idx, obs_uv,
-            rtk_priors, rtk_w_sqrt, f_px, cx, cy,
-        )
+        # (a) Reprojection residuals
+        for cam_idx, pt_idx, obs in observations:
+            cam = cams[cam_idx]
+            predicted = project_point(
+                pts[pt_idx], cam[:3], cam[3], cam[4], cam[5],
+                f_px, cx, cy,
+            )
+            res.extend(predicted - obs)
 
-    jac_sparsity = _build_jacobian_sparsity(n_cam, n_pts, obs_cam_idx, obs_pt_idx)
+        # (b) RTK prior residuals — 각 카메라 위치를 RTK 측정값에 묶음
+        for i in range(n_cam):
+            diff = cams[i, :3] - rtk_priors[i]
+            res.extend(np.sqrt(rtk_weights[i]) * diff)
 
-    x0 = np.concatenate([initial_cameras.ravel(), initial_points.ravel()])
+        return np.array(res)
+
+    x0 = pack(initial_cameras, initial_points)
+    print(x0, len(x0), type(x0))
     t0 = time.perf_counter()
     result = least_squares(
         residuals, x0,
         method="trf",
         loss="huber",
-        f_scale=2.0,            # 픽셀 단위 outlier 임계값
+        f_scale=2.0,           # 픽셀 단위 outlier 임계값
         max_nfev=300,
-        jac_sparsity=jac_sparsity,
         verbose=2,
     )
-    logger.info("BA wallclock: %.2fs", time.perf_counter() - t0)
-
-    cams_opt = result.x[: n_cam * 6].reshape(n_cam, 6)
-    pts_opt = result.x[n_cam * 6:].reshape(n_pts, 3)
-    rmse_px = np.sqrt(2 * result.cost / M)
+    logger.info("- Least Squares: %s", fmt_elapsed(time.perf_counter() - t0))
+    cams_opt, pts_opt = unpack(result.x)
+    rmse_px = np.sqrt(2 * result.cost / len(observations))
     logger.info("BA 완료. Reprojection RMSE ≈ %.2f px", rmse_px)
-    free_gpu_memory()
     return cams_opt, pts_opt, rmse_px
 
 

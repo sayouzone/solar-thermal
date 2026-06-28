@@ -1,6 +1,28 @@
 """
 업로드된 DJI 사진으로 georeferencing 실행
+
+
+python scripts/run_georeferencing.py \
+    --rgb-path data/solar/에스엘에너지_사천시/RGB \
+    --rgb-label-path workspace/predict_sl_sacheon_l/predicted_labels \
+    --output-dir workspace/georeferencing/sl_sacheon
+
+python scripts/run_georeferencing.py \
+    --rgb-path data/solar/갈평저수지/RGB \
+    --rgb-label-path workspace/predict_galpyeong_l/predicted_labels \
+    --output-dir workspace/georeferencing/galpyeong
+
+python scripts/run_georeferencing.py \
+    --rgb-path data/solar/옥산_1호/RGB \
+    --rgb-label-path workspace/predict_oksan_l/predicted_labels \
+    --output-dir workspace/georeferencing/oksan
+
+python scripts/run_georeferencing.py \
+    --rgb-path data/solar/EWP-서오창IC-2/RGB \
+    --rgb-label-path workspace/predict_seochang_ic/predicted_labels \
+    --output-dir workspace/georeferencing/seochang_ic
 """
+import argparse
 import json
 import math
 import sys
@@ -750,17 +772,30 @@ def extract_ir_geo(image_path: str, yolo_label: str, output_path: str) -> ImageM
     return metadata
 
 def main():
-    rgb_image_dir = Path("data/solar/images/RGB")
-    rgb_label_dir = Path("workspace/labels_s200_l_2_d")
-    ir_image_dir = Path("data/solar/images/TM")
-    ir_label_dir = Path("workspace/ir_rf")
-    rgb_path = "data/solar/images/RGB/DJI_20251217130217_0007_Z.JPG"
-    ir_path = "data/solar/images/TM/DJI_20251217130217_0007_T.JPG"
-    rgb_yolo_label = "workspace/labels_s100_m_d/DJI_20251217130217_0007_Z.txt"
-    ir_yolo_label = "workspace/ir_rf/DJI_20251217130217_0007_T_JPG.rf.a9de1d4093d48a9aff0dcb47ad3fb589.txt"
-    output_path = "workspace/claude/output"
+    ap = argparse.ArgumentParser(description="라벨 데이터를 지도에 매핑")
+    ap.add_argument("--rgb-path",         default="data/solar/환경관리/RGB")
+    ap.add_argument("--rgb-label-path",   default="workspace/labels_s200_l_2_d")
+    ap.add_argument("--ir-path",          default="data/solar/환경관리/TM")
+    ap.add_argument("--ir-label-path",    default="workspace/ir_rf")
+    ap.add_argument("--output-dir",  default="workspace/claude/output")
+
+    args = ap.parse_args()
+
+    rgb_image_dir = Path(args.rgb_path)
+    rgb_label_dir = Path(args.rgb_label_path)
+    ir_image_dir = Path(args.ir_path)
+    ir_label_dir = Path(args.ir_label_path)
+
+    rgb_path = args.rgb_path + "/DJI_20251217130217_0007_Z.JPG"
+    ir_path = args.ir_path + "/DJI_20251217130217_0007_T.JPG"
+    rgb_yolo_label = args.rgb_label_path + "/DJI_20251217130217_0007_Z.txt"
+    ir_yolo_label = args.ir_label_path + "/DJI_20251217130217_0007_T_JPG.rf.a9de1d4093d48a9aff0dcb47ad3fb589.txt"
+    output_path = args.output_dir
     image_path = rgb_path
     yolo_label = rgb_yolo_label
+
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     # RGB Georeferencing 추출
     rgb_images = sorted(rgb_image_dir.glob("*.JPG"))
@@ -772,6 +807,7 @@ def main():
         if len(rgb_labels) >= 1:
             extract_rgb_geo(image_path = str(p), yolo_label = str(rgb_labels[0]), output_path = output_path)
 
+    """
     # IR Georeferencing 추출
     ir_images = sorted(ir_image_dir.glob("*.JPG"))
 
@@ -780,6 +816,7 @@ def main():
         ir_labels = sorted(ir_label_dir.glob(label_filename))
         if len(ir_labels) >= 1:
             extract_ir_geo(image_path = str(p), yolo_label = str(ir_labels[0]), output_path = output_path)
+    """
 
     #rgb_metadata = extract_rgb_geo(image_path = rgb_path, yolo_label = rgb_yolo_label, output_path = output_path)
     #ir_metadata = extract_ir_geo(image_path = ir_path, yolo_label = ir_yolo_label, output_path = output_path)

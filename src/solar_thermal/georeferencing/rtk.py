@@ -52,13 +52,11 @@ def validate_rtk_quality(metas: list[ImageMetadata],
 def estimate_ground_z(meta: ImageMetadata) -> float:
     """평면 정사보정용 지표면 절대고도(m) 추정.
 
-    우선순위
-    --------
-    1) LRF 실측 (lrf[3] = LRFTargetAbsAlt) — H20T 등 LRF 탑재 기종.
-       촬영 시점 조준점의 실측 절대고도라 가장 정확.
-    2) ``gps.altitude - relative_height`` — RelativeAltitude 는 이륙지점
-       기준이라 촬영지 지형이 이륙지와 다르면 오차가 크다.
-    3) ``altitude - 100m`` (마지막 fallback, 경고 로깅)
+    우선순위:
+      1) LRF 실측 (lrf[3] = LRFTargetAbsAlt) — H20T 등 LRF 탑재 기종.
+         촬영 시점 조준점의 실측 절대고도라 가장 정확.
+      2) gps.altitude - relative_height — RelativeAltitude 는 이륙지점
+         기준이라 촬영지 지형이 이륙지와 다르면 오차가 크다.
     """
     if meta.has_valid_lrf:
         return float(meta.lrf_target_abs_alt)
@@ -73,16 +71,15 @@ def compute_rtk_prior_weights(metas: list[ImageMetadata]) -> np.ndarray:
 
     RTK Fixed 가 아니면 패널티 σ_xy=20cm, σ_z=30cm 를 강제 적용해서
     Float/Single 측정값이 해를 끌어당기지 못하게 한다.
+
+    RTK 표준편차로 가중치 산출 (Fixed=1cm 가정, Float=20cm 패널티)
     """
-    weights = np.zeros((len(metas), 3))
+    rtk_weights = np.zeros((len(metas), 3))
     for i, m in enumerate(metas):
-        if m.is_rtk_fixed:
-            sigma_xy, sigma_z = m.gps_std_xy, m.gps_std_z
-        else:
-            sigma_xy = max(m.gps_std_xy, 0.20)
-            sigma_z = max(m.gps_std_z, 0.30)
-        weights[i] = [1.0 / sigma_xy**2, 1.0 / sigma_xy**2, 1.0 / sigma_z**2]
-    return weights
+        sigma_xy = m.gps_std_xy if m.is_rtk_fixed else max(m.gps_std_xy, 0.20)
+        sigma_z = m.gps_std_z if m.is_rtk_fixed else max(m.gps_std_z, 0.30)
+        rtk_weights[i] = [1.0 / sigma_xy**2, 1.0 / sigma_xy**2, 1.0 / sigma_z**2]
+    return rtk_weights
 
 
 __all__ = [

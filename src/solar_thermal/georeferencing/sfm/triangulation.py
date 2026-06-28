@@ -54,6 +54,37 @@ def _triangulate_dlt_cpu(proj_mats: list[np.ndarray],
         return np.array([np.nan, np.nan, np.nan])
     return X[:3] / X[3]
 
+def triangulate_dlt(proj_mats: list[np.ndarray],
+                    points_2d: list[np.ndarray]) -> np.ndarray:
+    """DLT(Direct Linear Transform) 다중시점 삼각측량.
+
+    각 관측 (u, v) 와 카메라 P 에 대해, [u·w, v·w, w]ᵀ = P·[X,Y,Z,1]ᵀ 에서
+    u, v 를 소거하면 X=[X,Y,Z,1]ᵀ 에 대한 2개의 동차 선형식을 얻는다:
+        u·(P[2]·X) - (P[0]·X) = 0
+        v·(P[2]·X) - (P[1]·X) = 0
+    N개 시점이면 2N x 4 행렬 A 가 되고, A·X = 0 의 최소제곱해는
+    AᵀA 의 최소 특이값에 대응하는 우특이벡터 (SVD 마지막 행).
+
+    Parameters
+    ----------
+    proj_mats : 각 관측에 대응하는 3x4 카메라 행렬 P 리스트
+    points_2d : 각 관측의 (u, v) 픽셀좌표 리스트
+
+    Returns
+    -------
+    point_3d : (3,) 복원된 지상점 (X, Y, Z)
+    """
+    A = []
+    for P, (u, v) in zip(proj_mats, points_2d):
+        A.append(u * P[2] - P[0])
+        A.append(v * P[2] - P[1])
+    A = np.asarray(A)                       # (2N, 4)
+    _, _, vt = np.linalg.svd(A)
+    X = vt[-1]                              # 최소 특이값의 우특이벡터
+    if abs(X[3]) < 1e-12:
+        return np.array([np.nan, np.nan, np.nan])
+    return X[:3] / X[3]                     # 동차 → 3D
+
 
 def _compute_proj_and_centers(cameras: np.ndarray,
                               intrinsics: list[tuple[float, float, float]]):
@@ -261,25 +292,98 @@ def triangulate_tracks(tracks: list,
                        cameras: np.ndarray,
                        intrinsics: list[tuple[float, float, float]],
                        max_reproj_err_px: float = 3.0,
-                       min_triangulation_angle_deg: float = 2.0,
-                       gpu_min_tracks: int = 50):
-    """tracks → BA 입력 (observations, initial_points, track_point_map).
+                       min_triangulation_angle_deg: float = 2.0):
+    """track 들을 삼각측량해서 BA 입력(observations, initial_points) 생성.
 
-    GPU 가용 + ``len(tracks) >= gpu_min_tracks`` 면 CuPy 배치 SVD,
-    아니면 CPU 순회. 예외 발생 시 자동 CPU fallback.
+    Parameters
+    ----------
+    tracks : build_tracks 의 출력
+    cameras : (n_cam, 6) 초기 외부표정 [Xc, Yc, Zc, ω, φ, κ]
+              (RTK 좌표 + 짐벌 자세에서 만든 초기값)
+    intrinsics : 카메라별 (f_px, cx, cy) 리스트
+    max_reproj_err_px : 삼각측량 후 재투영 오차가 이 값을 넘는 track 은 제거
+    min_triangulation_angle_deg : 시선각(parallax)이 너무 작으면 깊이가
+        불안정하므로 제거. nadir 드론 사진은 베이스라인이 짧아 각이
+        작은 편이라 2도 정도로 완화.
+
+    Returns
+    -------
+    observations : list[(cam_idx, point_idx, np.array([u, v]))]
+    initial_points : (n_pts, 3) 삼각측량된 3D 점들
+    track_point_map : list[int] — initial_points[k] 가 몇 번째 track 인지
     """
-    if HAS_CUPY and len(tracks) >= gpu_min_tracks:
-        try:
-            return _triangulate_batched_gpu(
-                tracks, cameras, intrinsics,
-                max_reproj_err_px, min_triangulation_angle_deg,
-            )
-        except Exception as e:
-            logger.warning("GPU triangulation 실패 (%s) → CPU 폴백", e)
-    return _triangulate_cpu(
-        tracks, cameras, intrinsics,
-        max_reproj_err_px, min_triangulation_angle_deg,
+    # 카메라별 P 행렬 미리 계산
+    proj_cache = {}
+    centers = {}
+    for cam_idx in range(len(cameras)):
+        Xc, Yc, Zc, om, ph, ka = cameras[cam_idx]
+        f_px, cx, cy = intrinsics[cam_idx]
+        C = np.array([Xc, Yc, Zc])
+        proj_cache[cam_idx] = camera_projection_matrix(C, om, ph, ka, f_px, cx, cy)
+        centers[cam_idx] = C
+
+    observations = []
+    initial_points = []
+    track_point_map = []
+    dropped_angle = dropped_reproj = dropped_degenerate = 0
+
+    for t_idx, track in enumerate(tracks):
+        cam_indices = [obs[0] for obs in track]
+        pts2d = [np.array([obs[2], obs[3]]) for obs in track]
+        Ps = [proj_cache[ci] for ci in cam_indices]
+
+        # --- DLT 삼각측량 ---
+        X = triangulate_dlt(Ps, pts2d)
+        if not np.all(np.isfinite(X)):
+            dropped_degenerate += 1
+            continue
+
+        # --- 시선각(parallax) 체크 ---
+        # 가장 멀리 떨어진 두 카메라에서 점을 바라본 방향벡터 사이 각도.
+        rays = [(X - centers[ci]) for ci in cam_indices]
+        rays = [r / (np.linalg.norm(r) + 1e-12) for r in rays]
+        max_angle = 0.0
+        for a in range(len(rays)):
+            for b in range(a + 1, len(rays)):
+                cos_ang = np.clip(rays[a] @ rays[b], -1.0, 1.0)
+                max_angle = max(max_angle, np.degrees(np.arccos(cos_ang)))
+        if max_angle < min_triangulation_angle_deg:
+            dropped_angle += 1
+            continue
+
+        # --- 재투영 오차 체크 ---
+        Xh = np.append(X, 1.0)
+        reproj_errs = []
+        for P, uv in zip(Ps, pts2d):
+            uvw = P @ Xh
+            if abs(uvw[2]) < 1e-12:
+                reproj_errs.append(1e9)
+                continue
+            uv_pred = uvw[:2] / uvw[2]
+            reproj_errs.append(np.linalg.norm(uv_pred - uv))
+        if np.mean(reproj_errs) > max_reproj_err_px:
+            dropped_reproj += 1
+            continue
+
+        # --- 통과: observations 에 추가 ---
+        point_idx = len(initial_points)
+        initial_points.append(X)
+        track_point_map.append(t_idx)
+        for ci, uv in zip(cam_indices, pts2d):
+            observations.append((ci, point_idx, uv))
+
+    initial_points = (np.array(initial_points)
+                      if initial_points else np.zeros((0, 3)))
+    logger.info(
+        "삼각측량: %d개 3D점 복원, %d개 관측 (제거: 시선각 %d, 재투영 %d, 퇴화 %d)",
+        len(initial_points), len(observations),
+        dropped_angle, dropped_reproj, dropped_degenerate,
     )
+    if len(initial_points) > 0:
+        zs = initial_points[:, 2]
+        logger.info("  복원점 Z범위: %.1f ~ %.1f m (중앙값 %.1f)",
+                    zs.min(), zs.max(), np.median(zs))
+    return observations, initial_points, track_point_map
 
 
 __all__ = ["triangulate_tracks"]

@@ -1,7 +1,11 @@
-"""GPU 가속 백엔드 — 런타임 capability 감지 + CPU fallback.
+"""GPU 가속 백엔드 + 버전 호환성 진단.
 
 이 모듈은 사용 가능한 GPU 라이브러리를 import 단계에서 감지하여
 런타임에 안전하게 분기할 수 있도록 plain 플래그/얇은 wrapper 만 제공한다.
+
+추가로, 알려진 위험 조합(예: opencv-python 4.13 + Python 3.14 + numpy 2 미만)
+을 감지해서 ProcessPool 자체를 자동 비활성화하여 ``BrokenProcessPool`` 을
+사전에 방지한다.
 
 핵심 원칙
 ---------
@@ -11,13 +15,16 @@
 
 환경변수
 --------
-``GEOREF_DISABLE_GPU=1`` 로 모든 GPU 경로를 강제 비활성화 (벤치마크/디버깅용).
+* ``GEOREF_DISABLE_GPU=1`` — 모든 GPU 경로 비활성화
+* ``GEOREF_DISABLE_MULTIPROCESS=1`` — ProcessPool 비활성, 단일 프로세스 강제
+* ``GEOREF_NUM_WORKERS=N`` — ProcessPool 워커 수 명시 (extract.py 에서 읽음)
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +37,12 @@ cp = None  # type: ignore
 try:
     import cupy as _cp  # type: ignore
 
-    # 실제 디바이스 한 번 찔러서 동작 검증 (드라이버/런타임 불일치 잡기).
     _cp.cuda.runtime.getDeviceCount()
     cp = _cp
     HAS_CUPY = True
     logger.info("[GPU] CuPy 활성화 (CUDA device count=%d)",
                 _cp.cuda.runtime.getDeviceCount())
-except Exception as e:  # ImportError, CUDARuntimeError, etc.
+except Exception as e:
     logger.info("[GPU] CuPy 비활성 (%s) — BA/triangulation/warp CPU 사용",
                 type(e).__name__)
 
@@ -48,12 +54,13 @@ HAS_CV_CUDA: bool = False
 HAS_CV_CUDA_SIFT: bool = False
 HAS_CV_CUDA_ORB: bool = False
 HAS_CV_CUDA_REMAP: bool = False
+_CV2_VERSION: str = "unknown"
 try:
     import cv2 as _cv2
 
+    _CV2_VERSION = getattr(_cv2, "__version__", "unknown")
     if _cv2.cuda.getCudaEnabledDeviceCount() > 0:
         HAS_CV_CUDA = True
-        # SIFT_CUDA 는 OpenCV 4.5.1+ + contrib 가 필요.
         HAS_CV_CUDA_SIFT = hasattr(_cv2.cuda, "SIFT_CUDA") or hasattr(
             _cv2.cuda, "SIFT_create"
         )
@@ -92,6 +99,67 @@ try:
         logger.info("[GPU] PyTorch CUDA 비활성")
 except Exception as e:
     logger.info("[GPU] PyTorch 비활성 (%s)", type(e).__name__)
+
+
+# ---------------------------------------------------------------------------
+# 버전 호환성 진단 — ProcessPool 안전성 판정
+# ---------------------------------------------------------------------------
+# 알려진 위험 조합:
+#   1. opencv-python 4.13.x + Python 3.14 + numpy < 2
+#      → opencv-python 4.13 빌드가 numpy 2 ABI 를 요구하는데
+#        런타임에 numpy 1 이 있으면 spawn 워커에서 cv2 import 시 segfault.
+#        근거: https://github.com/opencv/opencv-python/issues/1201
+#
+# 이외에도 새 위험 조합이 발견되면 _known_bad_combo() 에 추가.
+# 진단 결과에 따라 PROCESSPOOL_SAFE 플래그를 설정하고, extract.py 가
+# 이 플래그를 보고 단일 프로세스 fallback 으로 즉시 전환한다.
+PROCESSPOOL_SAFE: bool = True
+_PROCESSPOOL_DIAGNOSIS: str = ""
+
+
+def _check_numpy_version() -> tuple[int, int]:
+    """numpy major.minor 버전 튜플 반환. import 실패 시 (0, 0)."""
+    try:
+        import numpy as _np
+        parts = _np.__version__.split(".")
+        return (int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
+    except Exception:
+        return (0, 0)
+
+
+def _diagnose_processpool_safety() -> tuple[bool, str]:
+    """ProcessPool 사용이 안전한지 진단.
+
+    Returns
+    -------
+    (safe, reason) : 안전 여부와 사유 메시지.
+    """
+    py_major, py_minor = sys.version_info.major, sys.version_info.minor
+    np_major, np_minor = _check_numpy_version()
+    cv_version = _CV2_VERSION
+
+    # opencv-python 4.13.x + Python 3.14 + numpy < 2 → segfault in spawn worker
+    if (cv_version.startswith("4.13.")
+            and (py_major, py_minor) >= (3, 14)
+            and (np_major, np_minor) > (0, 0)
+            and np_major < 2):
+        return (False,
+                f"opencv-python {cv_version} + Python {py_major}.{py_minor} "
+                f"+ numpy {np_major}.{np_minor} 조합은 spawn 워커에서 "
+                f"BrokenProcessPool 을 일으킵니다. numpy>=2 로 업그레이드하거나 "
+                f"opencv-python<4.13 으로 다운그레이드 권장. "
+                f"임시 회피로 ProcessPool 자동 비활성화.")
+
+    # 환경변수 강제.
+    if os.environ.get("GEOREF_DISABLE_MULTIPROCESS", "").lower() in ("1", "true", "yes"):
+        return (False, "GEOREF_DISABLE_MULTIPROCESS 환경변수로 비활성")
+
+    return (True, "")
+
+
+PROCESSPOOL_SAFE, _PROCESSPOOL_DIAGNOSIS = _diagnose_processpool_safety()
+if not PROCESSPOOL_SAFE:
+    logger.warning("[MP] ProcessPool 비활성: %s", _PROCESSPOOL_DIAGNOSIS)
 
 
 # ---------------------------------------------------------------------------
@@ -144,14 +212,16 @@ def gpu_summary() -> str:
         parts.append("LightGlue")
     elif HAS_TORCH:
         parts.append("PyTorch")
+    mp_status = "MP=on" if PROCESSPOOL_SAFE else "MP=off"
     if not parts:
-        return "CPU only"
-    return " + ".join(parts)
+        return f"CPU only ({mp_status})"
+    return f"{' + '.join(parts)} ({mp_status})"
 
 
 __all__ = [
     "HAS_CUPY", "cp",
     "HAS_CV_CUDA", "HAS_CV_CUDA_SIFT", "HAS_CV_CUDA_ORB", "HAS_CV_CUDA_REMAP",
     "HAS_TORCH", "HAS_LIGHTGLUE", "torch",
+    "PROCESSPOOL_SAFE",
     "free_gpu_memory", "gpu_summary",
 ]

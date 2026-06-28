@@ -115,7 +115,6 @@ End-to-End 파이프라인 실행
         --select-top 20
 
 
-
 python scripts/run_active_training.py seed \
     --images data/solar/images/RGB \
     --seed-labels ./workspace/labels_s20 \
@@ -438,11 +437,62 @@ python scripts/run_active_training.py seed \
     --amp True \
     --output ./workspace/train_s200_l_2_d
 
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s200_l_2_d/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s200_l_2_d \
+    --select-top 20
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/images/RGB \
+    --model ./runs/detect/workspace/train_s200_l_d/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s200_l_d \
+    --select-top 20
+
+
+
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/갈평저수지/RGB \
+    --model ./runs/detect/workspace/train_s300_l/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_galpyeong_l_d \
+    --select-top 20
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/에스엘에너지_사천시/RGB \
+    --model ./runs/detect/workspace/train_s300_l/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_sl_sacheon_l_d \
+    --select-top 20
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/옥산_1호/RGB \
+    --model ./runs/detect/workspace/train_s300_l/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_oksan_l_d \
+    --select-top 20
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/s300 \
+    --model ./runs/detect/workspace/train_s300_l/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s300 \
+    --select-top 20
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/s300_1 \
+    --model ./runs/detect/workspace/train_s300_l/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s300_1 \
+    --select-top 20
 
 # 
 python scripts/run_training.py \
     --images data/solar/images/RGB \
-    --labels-dir ./workspace/labels_s200_m_d \
+    --labels-dir ./workspace/labels_s200_m_3_d \
     --visual-dir ./workspace/visualized \
     --strategy sam2 \
     --classes pv_string pv_module other anomaly \
@@ -450,8 +500,246 @@ python scripts/run_training.py \
 
 python scripts/run_training.py \
     --images data/solar/images/RGB \
-    --labels-dir ./workspace/predict_s200_x_d/predicted_labels \
+    --labels-dir ./workspace/predict_s200_l_2_d/predicted_labels \
     --visual-dir ./workspace/visualized \
+    --strategy sam2 \
+    --classes pv_string pv_module other anomaly \
+    --steps visualize
+
+
+
+python scripts/run_training.py \
+    --images data/solar/갈평저수지/RGB \
+    --labels-dir ./workspace/predict_galpyeong_l_d/predicted_labels \
+    --visual-dir ./workspace/visualized_galpyeong \
+    --strategy sam2 \
+    --classes pv_string pv_module other anomaly \
+    --steps visualize
+
+python scripts/run_training.py \
+    --images data/solar/에스엘에너지_사천시/RGB \
+    --labels-dir ./workspace/predict_sl_sacheon_l_d/predicted_labels \
+    --visual-dir ./workspace/visualized_sl_sacheon \
+    --strategy sam2 \
+    --classes pv_string pv_module other anomaly \
+    --steps visualize
+
+python scripts/run_training.py \
+    --images data/solar/옥산_1호/RGB \
+    --labels-dir ./workspace/predict_oksan_l_d/predicted_labels \
+    --visual-dir ./workspace/visualized_sl_oksan \
+    --strategy sam2 \
+    --classes pv_string pv_module other anomaly \
+    --steps visualize
+
+python scripts/run_training.py \
+    --images data/solar/s300 \
+    --labels-dir ./workspace/labels_s300 \
+    --visual-dir ./workspace/visualized_s300 \
+    --strategy sam2 \
+    --classes pv_string pv_module other anomaly \
+    --steps visualize
+
+
+
+
+
+python scripts/run_active_training.py seed \
+    --images data/s300_l \
+    --seed-labels ./workspace/labels_s300_l \
+    --model models/yolo11l.pt \
+    --epochs 400 \
+    --batch 8 \
+    --device cuda \
+    --amp True \
+    --output ./workspace/train_s300_l
+
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/s300 \
+    --model ./runs/detect/workspace/train_s300_l/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s300_l \
+    --select-top 20
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/s300 \
+    --model ./runs/detect/workspace/train_s300_l_2/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s300_l_2 \
+    --select-top 20
+
+
+python scripts/run_training.py \
+    --images data/solar/s300 \
+    --labels-dir ./workspace/labels_s300_2 \
+    --visual-dir ./workspace/visualized_s300 \
+    --strategy sam2 \
+    --classes pv_string pv_module other anomaly \
+    --steps visualize
+
+python scripts/run_training.py \
+    --images data/solar/s300 \
+    --labels-dir ./workspace/labels_s300_3 \
+    --visual-dir ./workspace/visualized_s300 \
+    --strategy sam2 \
+    --classes pv_string pv_module other anomaly \
+    --steps visualize
+
+python scripts/run_training.py \
+    --images data/solar/s300_1 \
+    --labels-dir ./workspace/labels_s300_3 \
+    --visual-dir ./workspace/visualized_s300_1 \
+    --strategy sam2 \
+    --classes pv_string pv_module other anomaly \
+    --steps visualize
+
+
+
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/갈평저수지/RGB \
+    --model ./runs/detect/workspace/train_s300_l/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_galpyeong_l \
+    --select-top 20
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/에스엘에너지_사천시/RGB \
+    --model ./runs/detect/workspace/train_s300_l/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_sl_sacheon_l \
+    --select-top 20
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/옥산_1호/RGB \
+    --model ./runs/detect/workspace/train_s300_l/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_oksan_l \
+    --select-top 20
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/EWP-서오창IC-2/RGB \
+    --model ./runs/detect/workspace/train_s300_l/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_seochang_ic \
+    --select-top 20
+
+python scripts/run_training.py \
+    --images data/solar/갈평저수지/RGB \
+    --labels-dir ./workspace/predict_galpyeong_l/predicted_labels \
+    --visual-dir ./workspace/visualized_galpyeong \
+    --strategy sam2 \
+    --classes pv_string pv_module other anomaly \
+    --steps visualize
+
+python scripts/run_training.py \
+    --images data/solar/에스엘에너지_사천시/RGB \
+    --labels-dir ./workspace/predict_sl_sacheon_l/predicted_labels \
+    --visual-dir ./workspace/visualized_sl_sacheon \
+    --strategy sam2 \
+    --classes pv_string pv_module other anomaly \
+    --steps visualize
+
+python scripts/run_training.py \
+    --images data/solar/옥산_1호/RGB \
+    --labels-dir ./workspace/predict_oksan_l/predicted_labels \
+    --visual-dir ./workspace/visualized_sl_oksan \
+    --strategy sam2 \
+    --classes pv_string pv_module other anomaly \
+    --steps visualize
+
+python scripts/run_training.py \
+    --images data/solar/EWP-서오창IC-2/RGB \
+    --labels-dir ./workspace/predict_seochang_ic/predicted_labels \
+    --visual-dir ./workspace/visualized_seochang_ic \
+    --strategy sam2 \
+    --classes pv_string pv_module other anomaly \
+    --steps visualize
+
+python scripts/run_training.py \
+    --images data/solar/환경관리/RGB \
+    --labels-dir ./workspace/predict_environ/predicted_labels \
+    --visual-dir ./workspace/visualized_environ \
+    --strategy sam2 \
+    --classes pv_string pv_module other anomaly \
+    --steps visualize
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/환경관리/RGB \
+    --model ./runs/detect/workspace/train_s400_l/weights-3/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_environ \
+    --select-top 20
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/갈평저수지/RGB \
+    --model ./runs/detect/workspace/train_s400_l/weights-3/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_galpyeong_l \
+    --select-top 20
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/에스엘에너지_사천시/RGB \
+    --model ./runs/detect/workspace/train_s400_l/weights-3/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_sl_sacheon_l \
+    --select-top 20
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/옥산_1호/RGB \
+    --model ./runs/detect/workspace/train_s400_l/weights-3/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_oksan_l \
+    --select-top 20
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/EWP-서오창IC-2/RGB \
+    --model ./runs/detect/workspace/train_s400_l/weights-3/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_seochang_ic \
+    --select-top 20
+
+
+python scripts/run_active_training.py seed \
+    --images data/s300_l \
+    --seed-labels ./workspace/labels_s300_l \
+    --model models/yolo11l.pt \
+    --epochs 400 \
+    --batch 8 \
+    --device cuda \
+    --amp True \
+    --output ./workspace/train_s300_l
+
+python scripts/run_active_training.py seed \
+    --images data/s400_l \
+    --seed-labels ./workspace/labels_s400_l \
+    --model models/yolo11l.pt \
+    --epochs 400 \
+    --batch 8 \
+    --device cuda \
+    --amp True \
+    --output ./workspace/train_s400_l
+
+python scripts/run_active_training.py iterate \
+    --images data/solar/s300 \
+    --model ./runs/detect/workspace/train_s300_l/weights/weights/best.pt \
+    --device mps \
+    --output ./workspace/predict_s300_l \
+    --select-top 20
+
+python scripts/run_training.py \
+    --images data/solar/s300 \
+    --labels-dir ./workspace/labels_s300 \
+    --visual-dir ./workspace/visualized_s300 \
+    --strategy sam2 \
+    --classes pv_string pv_module other anomaly \
+    --steps visualize
+
+python scripts/run_training.py \
+    --images data/solar/s300 \
+    --labels-dir ./workspace/predict_s300_l/predicted_labels \
+    --visual-dir ./workspace/visualized_s300 \
     --strategy sam2 \
     --classes pv_string pv_module other anomaly \
     --steps visualize
